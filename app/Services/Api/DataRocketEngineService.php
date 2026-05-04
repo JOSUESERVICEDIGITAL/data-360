@@ -19,7 +19,8 @@ class DataRocketEngineService
         protected CoproprieteApiService $coproprieteApi,
         protected SireneApiService $sireneApi,
         protected PappersApiService $pappersApi,
-    ) {}
+    ) {
+    }
 
     public function searchByAddress(string $query): array
     {
@@ -82,6 +83,8 @@ class DataRocketEngineService
             if (empty($batimentsApi)) {
                 $batimentsApi = $this->bdnbApi->searchByAddress($geo['adresse_complete']);
             }
+
+            $batimentsApi = $this->selectMainBuildings($batimentsApi);
 
             $batiments = [];
 
@@ -168,22 +171,38 @@ class DataRocketEngineService
 
                     $syndic = Syndic::updateOrCreate(
                         [
-                            'siren' => $sirenSyndic,
-                        ],
-                        [
                             'nom' => $pappers['nom']
                                 ?? $sirene['nom']
                                 ?? $coproData['syndic_nom']
                                 ?? $coproData['representant_legal_nom']
                                 ?? null,
 
-                            'siret' => $siretSyndic ?? ($etablissements[0]['siret'] ?? null),
-                            'forme_juridique' => $pappers['forme_juridique'] ?? $sirene['forme_juridique'] ?? null,
+                            'siret' => $pappers['siret']
+                                ?? $siretSyndic
+                                ?? ($etablissements[0]['siret'] ?? null),
+
+                            'forme_juridique' => $pappers['forme_juridique']
+                                ?? $sirene['forme_juridique']
+                                ?? null,
+
                             'activite' => $sirene['activite'] ?? null,
 
-                            'adresse_complete' => $etablissements[0]['adresse_complete'] ?? null,
-                            'code_postal' => $etablissements[0]['code_postal'] ?? null,
-                            'ville' => $etablissements[0]['ville'] ?? null,
+                            'capital_social' => $pappers['capital_social'] ?? null,
+                            'chiffre_affaires' => $pappers['chiffre_affaires'] ?? null,
+                            'resultat' => $pappers['resultat'] ?? null,
+                            'effectif' => $pappers['effectif'] ?? null,
+                            'date_creation' => $pappers['date_creation'] ?? null,
+                            'dirigeant_principal' => $pappers['dirigeant_principal'] ?? null,
+                            'url_pappers' => $pappers['url_pappers'] ?? null,
+
+                            'adresse_complete' => $pappers['adresse_complete']
+                                ?? ($etablissements[0]['adresse_complete'] ?? null),
+
+                            'code_postal' => $pappers['code_postal']
+                                ?? ($etablissements[0]['code_postal'] ?? null),
+
+                            'ville' => $pappers['ville']
+                                ?? ($etablissements[0]['ville'] ?? null),
 
                             'raw_data' => [
                                 'sirene' => $sirene,
@@ -244,6 +263,75 @@ class DataRocketEngineService
                 'syndics' => $syndics,
             ];
         });
+    }
+
+    private function selectMainBuildings(array $batiments): array
+    {
+        if (empty($batiments)) {
+            return [];
+        }
+
+        $scored = collect($batiments)->map(function ($batiment) {
+            return [
+                'score' => $this->mainBuildingScore($batiment),
+                'data' => $batiment,
+            ];
+        })->sortByDesc('score')->values();
+
+        $best = $scored->first();
+
+        if (!$best) {
+            return [];
+        }
+
+        // On garde uniquement le bâtiment principal
+        return [$best['data']];
+    }
+
+    private function mainBuildingScore(array $batiment): int
+    {
+        $score = 0;
+
+        $type = $batiment['type_batiment'] ?? 'inconnu';
+        $logements = (int) ($batiment['nombre_logements'] ?? 0);
+        $niveaux = (int) ($batiment['nombre_niveaux'] ?? 0);
+        $hauteur = (float) ($batiment['hauteur'] ?? 0);
+        $surface = (float) ($batiment['surface_emprise_sol'] ?? 0);
+        $annee = $batiment['annee_construction'] ?? null;
+
+        if ($type === 'collectif') {
+            $score += 50;
+        }
+
+        if ($type === 'individuel') {
+            $score += 30;
+        }
+
+        if ($type === 'inconnu') {
+            $score -= 20;
+        }
+
+        if ($logements > 0) {
+            $score += min($logements, 50);
+        }
+
+        if ($niveaux > 0) {
+            $score += $niveaux * 5;
+        }
+
+        if ($hauteur > 3) {
+            $score += (int) $hauteur;
+        }
+
+        if ($surface > 0) {
+            $score += min((int) ($surface / 20), 30);
+        }
+
+        if ($annee) {
+            $score += 10;
+        }
+
+        return $score;
     }
 
     private function calculateScore(array $batiment): float
