@@ -1,0 +1,522 @@
+@extends('front.layouts.app')
+
+@section('title', 'Data Rocket - Résultat recherche')
+
+@section('content')
+
+@php
+    function dr_value($model, array $keys, $default = '-') {
+        foreach ($keys as $key) {
+            if (is_object($model) && isset($model->{$key}) && $model->{$key} !== null && $model->{$key} !== '') {
+                return $model->{$key};
+            }
+
+            $raw = is_object($model) ? ($model->raw_data ?? []) : ($model['raw_data'] ?? []);
+
+            if (is_string($raw)) {
+                $raw = json_decode($raw, true) ?: [];
+            }
+
+            if (is_array($raw) && isset($raw[$key]) && $raw[$key] !== null && $raw[$key] !== '') {
+                return $raw[$key];
+            }
+        }
+
+        return $default;
+    }
+@endphp
+
+<style>
+    .result-page {
+        background: #f8fafc;
+        color: #1e293b;
+        padding: 2rem 0;
+    }
+
+    .result-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+    }
+
+    .result-title {
+        font-size: 1.875rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        color: #0f172a;
+    }
+
+    .result-title span {
+        color: #0053b3;
+    }
+
+    .dr-card {
+        background: white;
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border: 1px solid #e2e8f0;
+    }
+
+    .dr-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+
+    .dr-card h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #0053b3;
+        display: inline-block;
+        color: #0053b3;
+    }
+
+    .dr-card h3 {
+        font-size: 1.125rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #1e293b;
+    }
+
+    .dr-badge {
+        background-color: #e6f0ff;
+        color: #0053b3;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        display: inline-block;
+        margin-bottom: 0.75rem;
+    }
+
+    .dr-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 1rem;
+        margin-top: 0.5rem;
+    }
+
+    .dr-info-item {
+        background-color: #f8fafc;
+        padding: 0.85rem;
+        border-radius: 12px;
+        border: 1px solid #eef2f7;
+    }
+
+    .dr-info-label {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #64748b;
+        margin-bottom: 0.25rem;
+    }
+
+    .dr-info-value {
+        font-weight: 700;
+        color: #0f172a;
+        word-break: break-word;
+    }
+
+    .dr-empty {
+        color: #64748b;
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 1rem;
+    }
+
+    .dr-hr {
+        margin: 1rem 0;
+        border: none;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .dr-btn {
+        display: inline-block;
+        background-color: #0053b3;
+        color: white;
+        padding: 0.625rem 1.25rem;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        border: none;
+        cursor: pointer;
+    }
+
+    .dr-btn:hover {
+        background-color: #003d85;
+        transform: translateY(-1px);
+    }
+
+    .dr-btn-white {
+        background: white;
+        color: #0053b3;
+    }
+
+    .dr-cta {
+        background: linear-gradient(135deg, #0053b3 0%, #003d85 100%);
+        color: white;
+        text-align: center;
+    }
+
+    .dr-cta h3 {
+        color: white;
+    }
+
+    .dr-cta p {
+        margin-bottom: 1rem;
+        color: #eaf2ff;
+    }
+
+    details {
+        margin-top: 1rem;
+    }
+
+    summary {
+        cursor: pointer;
+        color: #0053b3;
+        font-weight: 700;
+    }
+
+    pre {
+        white-space: pre-wrap;
+        background: #f1f5f9;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+        overflow: auto;
+        font-size: 12px;
+    }
+
+    @media (max-width: 768px) {
+        .result-container {
+            padding: 0 1rem;
+        }
+
+        .dr-card {
+            padding: 1rem;
+        }
+
+        .result-title {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+
+<section class="result-page">
+    <div class="result-container">
+
+        <h1 class="result-title">
+            🔍 Résultat pour : <span>{{ $q ?? '—' }}</span>
+        </h1>
+
+        @if(empty($resultat['success']))
+            <div class="dr-card" style="text-align:center;">
+                <h3>Aucun résultat complet</h3>
+                <p style="margin:1rem 0; color:#64748b;">
+                    {{ $resultat['message'] ?? 'Adresse non trouvée.' }}
+                </p>
+
+                <a href="{{ route('front.home') }}#carte" class="dr-btn">
+                    ← Rechercher une autre adresse
+                </a>
+            </div>
+        @else
+
+            <div class="dr-card">
+                <h2>📍 Adresse trouvée</h2>
+
+                <div class="dr-info-grid">
+                    <div class="dr-info-item">
+                        <div class="dr-info-label">Adresse complète</div>
+                        <div class="dr-info-value">{{ $adresse->adresse_complete ?? '-' }}</div>
+                    </div>
+
+                    <div class="dr-info-item">
+                        <div class="dr-info-label">Ville / Code postal</div>
+                        <div class="dr-info-value">{{ $adresse->code_postal ?? '' }} {{ $adresse->ville ?? '' }}</div>
+                    </div>
+
+                    <div class="dr-info-item">
+                        <div class="dr-info-label">Code INSEE</div>
+                        <div class="dr-info-value">{{ $adresse->code_insee ?? '-' }}</div>
+                    </div>
+
+                    <div class="dr-info-item">
+                        <div class="dr-info-label">Coordonnées GPS</div>
+                        <div class="dr-info-value">{{ $adresse->latitude ?? '-' }}, {{ $adresse->longitude ?? '-' }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dr-card">
+                <h2>🏛️ Cadastre</h2>
+
+                @forelse(($resultat['cadastre'] ?? []) as $parcelle)
+                    <div class="dr-badge">Parcelle cadastrale</div>
+
+                    <div class="dr-info-grid">
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">ID parcelle</div>
+                            <div class="dr-info-value">{{ $parcelle['id_parcelle'] ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Commune</div>
+                            <div class="dr-info-value">{{ $parcelle['commune'] ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Section</div>
+                            <div class="dr-info-value">{{ $parcelle['section'] ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Numéro</div>
+                            <div class="dr-info-value">{{ $parcelle['numero'] ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Contenance</div>
+                            <div class="dr-info-value">{{ $parcelle['contenance'] ?? '-' }} m²</div>
+                        </div>
+                    </div>
+
+                    @if(!$loop->last)
+                        <hr class="dr-hr">
+                    @endif
+                @empty
+                    <div class="dr-empty">Aucune parcelle trouvée.</div>
+                @endforelse
+            </div>
+
+            <div class="dr-card">
+                <h2>🏢 Bâtiments</h2>
+
+                @forelse(($resultat['batiments'] ?? []) as $batiment)
+                    <div class="dr-badge">Bâtiment BDNB</div>
+
+                    <div class="dr-info-grid">
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Identifiant BDNB</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['identifiant_bdnb', 'batiment_groupe_id', 'id_batiment_groupe', 'id']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Type de bâtiment</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['type_batiment', 'usage_niveau_1_txt', 'usage_principal', 'usage_niveau_1']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Année construction</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['annee_construction', 'annee_construction_estimee', 'annee_construction_dpe', 'annee_construction_max']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Nombre logements</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['nombre_logements', 'nb_logements', 'nb_log', 'nombre_logement']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Nombre niveaux</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['nombre_niveaux', 'nb_niveaux', 'nb_niveau', 'hauteur_nb_niveau']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Hauteur</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['hauteur', 'hauteur_mean', 'hauteur_moyenne']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Surface habitable</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['surface_habitable', 's_hab', 'surface_habitable_logement']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Surface emprise sol</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['surface_emprise_sol', 's_emprise_sol', 'surface_emprise']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">DPE</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['classe_dpe', 'dpe_classe', 'classe_bilan_dpe']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">GES</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['ges', 'classe_ges', 'ges_classe']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Type chauffage</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['type_chauffage', 'chauffage', 'type_installation_chauffage']) }}
+                            </div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Énergie chauffage</div>
+                            <div class="dr-info-value">
+                                {{ dr_value($batiment, ['energie_chauffage', 'energie_principale_chauffage']) }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <details>
+                        <summary>Voir données brutes BDNB</summary>
+                        <pre>{{ json_encode($batiment->raw_data ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
+                    </details>
+
+                    @if(!$loop->last)
+                        <hr class="dr-hr">
+                    @endif
+                @empty
+                    <div class="dr-empty">Aucun bâtiment trouvé pour le moment.</div>
+                @endforelse
+            </div>
+
+            <div class="dr-card">
+                <h2>🏘️ Copropriétés</h2>
+
+                @forelse(($resultat['coproprietes'] ?? []) as $copro)
+                    <div class="dr-badge">Copropriété RNIC</div>
+
+                    <div class="dr-info-grid">
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Nom de résidence</div>
+                            <div class="dr-info-value">{{ $copro->nom_copropriete ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Immatriculation</div>
+                            <div class="dr-info-value">{{ $copro->numero_immatriculation ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">SIREN copropriété</div>
+                            <div class="dr-info-value">{{ $copro->siren_copropriete ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Lots total</div>
+                            <div class="dr-info-value">{{ $copro->nombre_lots_total ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Lots habitation</div>
+                            <div class="dr-info-value">{{ $copro->nombre_lots_habitation ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Représentant légal</div>
+                            <div class="dr-info-value">{{ $copro->representant_label ?? '-' }}</div>
+                        </div>
+                    </div>
+
+                    <h3 style="margin-top:1rem;">Syndics associés</h3>
+
+                    @forelse($copro->syndics ?? [] as $syndic)
+                        <div class="dr-info-grid">
+                            <div class="dr-info-item">
+                                <div class="dr-info-label">Nom syndic</div>
+                                <div class="dr-info-value">{{ $syndic->nom ?? '-' }}</div>
+                            </div>
+
+                            <div class="dr-info-item">
+                                <div class="dr-info-label">SIREN</div>
+                                <div class="dr-info-value">{{ $syndic->siren ?? '-' }}</div>
+                            </div>
+
+                            <div class="dr-info-item">
+                                <div class="dr-info-label">SIRET</div>
+                                <div class="dr-info-value">{{ $syndic->siret ?? '-' }}</div>
+                            </div>
+                        </div>
+                    @empty
+                        <div class="dr-empty">Aucun syndic associé.</div>
+                    @endforelse
+
+                    @if(!$loop->last)
+                        <hr class="dr-hr">
+                    @endif
+                @empty
+                    <div class="dr-empty">
+                        Aucune copropriété trouvée pour le moment. Le service RNIC n’est pas encore branché.
+                    </div>
+                @endforelse
+            </div>
+
+            <div class="dr-card">
+                <h2>🏢 Syndics / Entreprises</h2>
+
+                @forelse(($resultat['syndics'] ?? []) as $syndic)
+                    <div class="dr-info-grid">
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Nom</div>
+                            <div class="dr-info-value">{{ $syndic->nom ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">SIREN</div>
+                            <div class="dr-info-value">{{ $syndic->siren ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">SIRET</div>
+                            <div class="dr-info-value">{{ $syndic->siret ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Forme juridique</div>
+                            <div class="dr-info-value">{{ $syndic->forme_juridique ?? '-' }}</div>
+                        </div>
+
+                        <div class="dr-info-item">
+                            <div class="dr-info-label">Activité</div>
+                            <div class="dr-info-value">{{ $syndic->activite ?? '-' }}</div>
+                        </div>
+                    </div>
+
+                    @if(!$loop->last)
+                        <hr class="dr-hr">
+                    @endif
+                @empty
+                    <div class="dr-empty">Aucun syndic trouvé pour le moment.</div>
+                @endforelse
+            </div>
+
+            <div class="dr-card dr-cta">
+                <h3>✨ Accédez à toutes ces données en illimité</h3>
+                <p>Adresse, cadastre, bâtiments, copropriétés, syndics, SIREN/SIRET et données enrichies.</p>
+                <a href="{{ route('front.home') }}#carte" class="dr-btn dr-btn-white">
+                    Rechercher une autre adresse →
+                </a>
+            </div>
+
+        @endif
+
+    </div>
+</section>
+@endsection
