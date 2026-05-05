@@ -9,7 +9,8 @@ class CoproprieteApiService
 {
     public function __construct(
         protected ApiLoggerService $logger
-    ) {}
+    ) {
+    }
 
     public function searchByAddress(string $adresse, ?string $codePostal = null, ?string $ville = null): array
     {
@@ -37,7 +38,7 @@ class CoproprieteApiService
                     'copro' => $copro,
                 ];
             })
-            ->filter(fn ($item) => $item['score'] >= 85 && $item['is_exact_address'])
+            ->filter(fn($item) => $item['score'] >= 70 && !empty($item['matched_address']))
             ->sortByDesc('score')
             ->take(5)
             ->values();
@@ -93,15 +94,21 @@ class CoproprieteApiService
     {
         $representantNom = $this->cleanRepresentativeName(
             $item['representant_legal_nom']
-                ?? $item['syndic_nom']
-                ?? $item['representant']
-                ?? null
+            ?? $item['syndic_nom']
+            ?? $item['representant']
+            ?? null
         );
+
+        $sirenSyndic = $item['siren_syndic'] ?? null;
+        $siretSyndic = $item['siret_syndic'] ?? null;
 
         $isSharedHiddenIdentity = $this->isHiddenOpenDataIdentity($representantNom);
 
-        $representantConnu = !empty($representantNom) && !$isSharedHiddenIdentity;
-
+        $representantConnu = (
+            (!empty($representantNom) && !$isSharedHiddenIdentity)
+            || !empty($sirenSyndic)
+            || !empty($siretSyndic)
+        );
         return [
             'numero_immatriculation' => $item['numero_immatriculation'] ?? null,
             'nom_copropriete' => $item['nom_copropriete'] ?? null,
@@ -116,13 +123,13 @@ class CoproprieteApiService
             'date_immatriculation' => $item['date_immatriculation'] ?? null,
 
             'representant_legal_connu' => $representantConnu,
-            'representant_legal_nom' => $representantConnu ? $representantNom : null,
             'representant_legal_type' => $representantConnu ? ($item['representant_legal_type'] ?? 'syndic') : null,
             'message_representant' => $representantConnu ? null : 'Pas de représentant légal connu',
 
+            'representant_legal_nom' => $representantConnu ? $representantNom : null,
             'syndic_nom' => $representantConnu ? ($item['syndic_nom'] ?? $representantNom) : null,
-            'siren_syndic' => $representantConnu ? ($item['siren_syndic'] ?? null) : null,
-            'siret_syndic' => $representantConnu ? ($item['siret_syndic'] ?? null) : null,
+            'siren_syndic' => $representantConnu ? $sirenSyndic : null,
+            'siret_syndic' => $representantConnu ? $siretSyndic : null,
 
             'score_match' => $item['score_match'] ?? null,
             'adresse_rnic_match' => $item['adresse_rnic_match'] ?? null,
@@ -133,6 +140,36 @@ class CoproprieteApiService
         ];
     }
 
+
+
+    private function extractStreetType(?string $text): ?string
+    {
+        $text = Str::ascii(mb_strtolower($text ?? ''));
+
+        $map = [
+            'rue' => ['rue', 'r'],
+            'avenue' => ['avenue', 'av', 'avenu'],
+            'boulevard' => ['boulevard', 'bd', 'boul'],
+            'allee' => ['allee', 'all'],
+            'chemin' => ['chemin', 'ch'],
+            'route' => ['route', 'rte'],
+            'impasse' => ['impasse'],
+            'place' => ['place', 'pl'],
+            'square' => ['square', 'sq'],
+            'cours' => ['cours', 'crs'],
+            'quai' => ['quai'],
+        ];
+
+        foreach ($map as $canonical => $aliases) {
+            foreach ($aliases as $alias) {
+                if (preg_match('/\b' . preg_quote($alias, '/') . '\b/u', $text)) {
+                    return $canonical;
+                }
+            }
+        }
+
+        return null;
+    }
     private function bestAddressMatchForCopro(
         RnicCopropriete $copro,
         string $originalSearched,
@@ -154,13 +191,45 @@ class CoproprieteApiService
             $candidateNumber = $this->extractNumber($candidate);
             $candidatePostal = $this->extractPostalCode($candidateAddress) ?: $copro->code_postal;
 
+            $searchedStreetType = $this->extractStreetType($originalSearched);
+            $candidateStreetType = $this->extractStreetType($candidateAddress);
+
+            if ($searchedStreetType && $candidateStreetType && $searchedStreetType !== $candidateStreetType) {
+                continue;
+            }
+
             if ($searchedPostal && $candidatePostal && $searchedPostal !== $candidatePostal) {
                 continue;
             }
 
-            if ($searchedNumber && $candidateNumber && $searchedNumber !== $candidateNumber) {
+            if ($searchedNumber && $candidateNumber) {
+                if ($searchedNumber !== $candidateNumber) {
+                    continue;
+                }
+            }
+
+            if ($searchedNumber && !$candidateNumber) {
                 continue;
             }
+            $searchedStreetWords = $this->extractStreetWordsOnly($searched);
+            $candidateStreetWords = $this->extractStreetWordsOnly($candidate);
+
+            $commonWords = array_intersect($searchedStreetWords, $candidateStreetWords);
+
+            $searchedStreetWords = array_values($searchedStreetWords);
+            $candidateStreetWords = array_values($candidateStreetWords);
+
+            if (!empty($searchedStreetWords)) {
+                foreach ($searchedStreetWords as $word) {
+                    if (!in_array($word, $candidateStreetWords, true)) {
+                        continue 2;
+                    }
+                }
+            }
+
+            // if (!empty($searchedStreetWords) && count($commonWords) === 0) {
+            //     continue;
+            // }
 
             $score = $this->scoreAddress($searched, $candidate, $searchedNumber, $searchedWords);
 
@@ -178,6 +247,44 @@ class CoproprieteApiService
         return $best;
     }
 
+
+    private function extractStreetWordsOnly(string $text): array
+    {
+        $words = array_filter(explode(' ', $text));
+
+        $stopWords = [
+            'rue',
+            'avenue',
+            'boulevard',
+            'allee',
+            'impasse',
+            'chemin',
+            'route',
+            'place',
+            'bis',
+            'ter',
+            'saint',
+            'sainte',
+            'marseille',
+            'montpellier',
+            'paris',
+            'lyon',
+            'toulouse',
+            'nice',
+            'nantes',
+            'bordeaux',
+            'lille',
+            'rennes',
+            'ciotat',
+        ];
+
+        return array_values(array_filter($words, function ($word) use ($stopWords) {
+            return strlen($word) >= 4
+                && !is_numeric($word)
+                && !in_array($word, $stopWords, true)
+                && !preg_match('/^\d{5}$/', $word);
+        }));
+    }
     private function candidateAddressesForCopro(RnicCopropriete $copro): array
     {
         $raw = $copro->raw_data ?? [];
@@ -271,6 +378,10 @@ class CoproprieteApiService
 
     private function extractNumber(string $text): ?string
     {
+        if (preg_match('/\b\d+\s*\/\s*\d+\b/', $text, $matches)) {
+            return str_replace(' ', '', $matches[0]);
+        }
+
         preg_match('/\b\d+\b/', $text, $matches);
 
         return $matches[0] ?? null;
@@ -288,8 +399,18 @@ class CoproprieteApiService
         $words = array_filter(explode(' ', $text));
 
         $stopWords = [
-            'rue', 'avenue', 'boulevard', 'allee', 'impasse', 'chemin', 'route',
-            'place', 'bis', 'ter', 'saint', 'sainte',
+            'rue',
+            'avenue',
+            'boulevard',
+            'allee',
+            'impasse',
+            'chemin',
+            'route',
+            'place',
+            'bis',
+            'ter',
+            'saint',
+            'sainte',
         ];
 
         return array_values(array_filter($words, function ($word) use ($stopWords) {

@@ -33,7 +33,7 @@
 
 <section class="section">
     <div class="container center-text">
-        <h2>Transformez vos Données en Opportunités avec Data Rocket</h2>
+        <h2>Transformez vos Données en Opportunités avec Data 360</h2>
         <p>
             La solution de prospection intelligente basée sur l’adresse :
             bâtiment, copropriété, syndic, SIREN et potentiel commercial.
@@ -41,7 +41,7 @@
     </div>
 </section>
 
-<section class="section" id="demo">
+<!-- <section class="section" id="demo">
     <div class="container two-col">
         <div class="img-placeholder">
             Carte interactive avec données bâtiment, copropriété et syndic
@@ -65,9 +65,9 @@
             </a>
         </div>
     </div>
-</section>
+</section> -->
 
-<section class="section soft-bg">
+<!-- <section class="section soft-bg">
     <div class="container">
         <div class="center-text">
             <h2>Adaptez Data Rocket à vos Stratégies Commerciales</h2>
@@ -103,9 +103,9 @@
             </div>
         </div>
     </div>
-</section>
+</section> -->
 
-<section class="cta" id="inscription">
+<!-- <section class="cta" id="inscription">
     <div class="container">
         <h2>Prêt à lancer votre moteur d’adresse ?</h2>
         <p>
@@ -117,6 +117,6 @@
             <a href="{{ route('front.demo') }}" class="btn btn-white-outline">Demander une démo</a>
         </div>
     </div>
-</section>
+</section> -->
 
 @endsection
