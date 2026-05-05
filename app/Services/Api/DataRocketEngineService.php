@@ -23,7 +23,7 @@ class DataRocketEngineService
 
     public function searchByAddress(string $query): array
     {
-        return DB::transaction(function () use ($query) {
+        // return DB::transaction(function () use ($query) {
 
             $geo = $this->adresseApi->search($query);
 
@@ -279,7 +279,7 @@ class DataRocketEngineService
                 'coproprietes' => $coproprietes,
                 'syndics' => $syndics,
             ];
-        });
+        // });
     }
 
     private function selectMainBuildings(array $batiments): array
