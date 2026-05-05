@@ -19,8 +19,7 @@ class DataRocketEngineService
         protected CoproprieteApiService $coproprieteApi,
         protected SireneApiService $sireneApi,
         protected PappersApiService $pappersApi,
-    ) {
-    }
+    ) {}
 
     public function searchByAddress(string $query): array
     {
@@ -161,20 +160,37 @@ class DataRocketEngineService
                     ]
                 );
 
-                $sirenSyndic = $coproData['siren_syndic'] ?? null;
-                $siretSyndic = $coproData['siret_syndic'] ?? null;
+                $sirenSyndic = preg_replace('/\D/', '', $coproData['siren_syndic'] ?? '');
+                $siretSyndic = preg_replace('/\D/', '', $coproData['siret_syndic'] ?? '');
 
-                if ($sirenSyndic) {
-                    $sirene = $this->sireneApi->searchBySiren($sirenSyndic);
-                    $etablissements = $this->sireneApi->searchEtablissementsBySiren($sirenSyndic);
-                    $pappers = $this->pappersApi->searchBySiren($sirenSyndic);
+                if (!$sirenSyndic && strlen($siretSyndic) === 14) {
+                    $sirenSyndic = substr($siretSyndic, 0, 9);
+                }
+
+                $syndicNom = $coproData['syndic_nom']
+                    ?? $coproData['representant_legal_nom']
+                    ?? null;
+
+                if ($sirenSyndic || $siretSyndic || $syndicNom) {
+                    $sirene = $sirenSyndic ? $this->sireneApi->searchBySiren($sirenSyndic) : null;
+                    $etablissements = $sirenSyndic ? $this->sireneApi->searchEtablissementsBySiren($sirenSyndic) : [];
+                    $pappers = $sirenSyndic ? $this->pappersApi->searchBySiren($sirenSyndic) : null;
+
+                    $uniqueKey = $sirenSyndic
+                        ?: ($siretSyndic ? substr($siretSyndic, 0, 9) : null);
+
+                    if (!$uniqueKey && $syndicNom) {
+                        $uniqueKey = substr(md5($syndicNom), 0, 9); // fallback court
+                    }
 
                     $syndic = Syndic::updateOrCreate(
                         [
+                            'siren' => $uniqueKey,
+                        ],
+                        [
                             'nom' => $pappers['nom']
                                 ?? $sirene['nom']
-                                ?? $coproData['syndic_nom']
-                                ?? $coproData['representant_legal_nom']
+                                ?? $syndicNom
                                 ?? null,
 
                             'siret' => $pappers['siret']
@@ -205,6 +221,7 @@ class DataRocketEngineService
                                 ?? ($etablissements[0]['ville'] ?? null),
 
                             'raw_data' => [
+                                'rnic' => $coproData,
                                 'sirene' => $sirene,
                                 'etablissements' => $etablissements,
                                 'pappers' => $pappers,

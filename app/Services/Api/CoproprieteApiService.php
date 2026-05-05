@@ -3,6 +3,7 @@
 namespace App\Services\Api;
 
 use App\Models\Back\RnicCopropriete;
+use Illuminate\Support\Str;
 
 class CoproprieteApiService
 {
@@ -12,7 +13,9 @@ class CoproprieteApiService
 
     public function searchByAddress(string $adresse, ?string $codePostal = null, ?string $ville = null): array
     {
-        $normalized = $this->normalizeText($adresse);
+        $searched = $this->normalizeText($adresse);
+        $streetNumber = $this->extractNumber($searched);
+        $streetWords = $this->extractImportantWords($searched);
 
         $query = RnicCopropriete::query();
 
@@ -26,23 +29,51 @@ class CoproprieteApiService
             });
         }
 
-        $results = $query
-            ->limit(100)
+        $candidates = $query
+            ->whereNotNull('adresse_complete')
+            ->limit(1000)
             ->get()
-            ->map(function (RnicCopropriete $copro) use ($normalized) {
-                $score = $this->scoreAddress($normalized, $this->normalizeText($copro->adresse_complete ?? ''));
+            ->map(function (RnicCopropriete $copro) use ($searched, $streetNumber, $streetWords) {
+                $candidate = $this->normalizeText($copro->adresse_complete);
 
                 return [
-                    'score_match' => $score,
+                    'score' => $this->scoreAddress($searched, $candidate, $streetNumber, $streetWords),
                     'copro' => $copro,
                 ];
             })
-            ->filter(fn ($item) => $item['score_match'] >= 35)
-            ->sortByDesc('score_match')
+            ->filter(fn ($item) => $item['score'] >= 45)
+            ->sortByDesc('score')
             ->take(10)
-            ->map(fn ($item) => $item['copro']->toArray())
-            ->values()
-            ->toArray();
+            ->values();
+
+        $results = [];
+
+        foreach ($candidates as $candidate) {
+            /** @var RnicCopropriete $copro */
+            $copro = $candidate['copro'];
+
+            $sameImmatriculation = collect();
+
+            if ($copro->numero_immatriculation) {
+                $sameImmatriculation = RnicCopropriete::where('numero_immatriculation', $copro->numero_immatriculation)
+                    ->get(['adresse_complete', 'code_postal', 'ville']);
+            }
+
+            $arr = $copro->toArray();
+            $arr['score_match'] = $candidate['score'];
+            $arr['adresses_associees_liste'] = $sameImmatriculation
+                ->map(fn ($a) => trim(($a->adresse_complete ?? '') . ' ' . ($a->code_postal ?? '') . ' ' . ($a->ville ?? '')))
+                ->filter()
+                ->unique()
+                ->values()
+                ->toArray();
+
+            if (!$arr['nombre_adresses_associees']) {
+                $arr['nombre_adresses_associees'] = count($arr['adresses_associees_liste']);
+            }
+
+            $results[] = $arr;
+        }
 
         $this->logger->log(
             'RNIC_LOCAL',
@@ -50,14 +81,8 @@ class CoproprieteApiService
             $adresse,
             null,
             !empty($results),
-            [
-                'adresse' => $adresse,
-                'code_postal' => $codePostal,
-                'ville' => $ville,
-            ],
-            [
-                'count' => count($results),
-            ],
+            compact('adresse', 'codePostal', 'ville'),
+            ['count' => count($results)],
             empty($results) ? 'Aucune copropriété locale trouvée' : null
         );
 
@@ -93,21 +118,37 @@ class CoproprieteApiService
             'siren_syndic' => $item['siren_syndic'] ?? null,
             'siret_syndic' => $item['siret_syndic'] ?? null,
 
+            'adresses_associees_liste' => $item['adresses_associees_liste'] ?? [],
+
             'raw_data' => $item,
         ];
     }
 
     private function normalizeText(?string $text): string
     {
-        $text = mb_strtolower($text ?? '');
-        $text = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
+        $text = Str::ascii(mb_strtolower($text ?? ''));
+        $text = preg_replace('/\b(rue|r|avenue|av|boulevard|bd|allee|all|impasse|chemin|ch|route|rte|place|pl)\b/u', ' ', $text);
         $text = preg_replace('/[^a-z0-9 ]/', ' ', $text);
         $text = preg_replace('/\s+/', ' ', $text);
 
         return trim($text);
     }
 
-    private function scoreAddress(string $searched, string $candidate): int
+    private function extractNumber(string $text): ?string
+    {
+        preg_match('/\b\d+\b/', $text, $matches);
+
+        return $matches[0] ?? null;
+    }
+
+    private function extractImportantWords(string $text): array
+    {
+        $words = array_filter(explode(' ', $text));
+
+        return array_values(array_filter($words, fn ($word) => strlen($word) >= 4 && !is_numeric($word)));
+    }
+
+    private function scoreAddress(string $searched, string $candidate, ?string $streetNumber, array $streetWords): int
     {
         if (!$searched || !$candidate) {
             return 0;
@@ -117,12 +158,15 @@ class CoproprieteApiService
 
         $score = (int) $percent;
 
-        $searchedWords = array_filter(explode(' ', $searched));
-        $candidateWords = array_filter(explode(' ', $candidate));
+        if ($streetNumber && preg_match('/\b' . preg_quote($streetNumber, '/') . '\b/', $candidate)) {
+            $score += 25;
+        }
 
-        $common = array_intersect($searchedWords, $candidateWords);
-
-        $score += count($common) * 5;
+        foreach ($streetWords as $word) {
+            if (str_contains($candidate, $word)) {
+                $score += 10;
+            }
+        }
 
         return min($score, 100);
     }

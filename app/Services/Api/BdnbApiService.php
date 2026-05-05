@@ -180,14 +180,20 @@ class BdnbApiService
                         ?? $data['type_installation_chauffage']
                         ?? null,
 
-                    'energie_chauffage' => $data['energie_chauffage']
+                    'energie_chauffage' => $data['l_ch_princ']
+                        ?? $data['l_ch_princ_generateur']
+                        ?? $data['l_ch_princ_energie']
+                        ?? $data['type_energie_chauffage']
+                        ?? $data['energie_chauffage']
                         ?? $data['energie_principale_chauffage']
+                        ?? $data['gen_ch_princ']
+                        ?? $data['generateur_chauffage_principal']
                         ?? null,
 
                     'raw_data' => $data,
                 ];
             })
-            ->filter(fn ($item) => !empty($item['identifiant_bdnb']) || !empty($item['raw_data']))
+            ->filter(fn($item) => !empty($item['identifiant_bdnb']) || !empty($item['raw_data']))
             ->values()
             ->toArray();
     }

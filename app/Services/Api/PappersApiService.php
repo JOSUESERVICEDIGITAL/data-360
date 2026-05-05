@@ -22,7 +22,7 @@ class PappersApiService
             return null;
         }
 
-        $apiKey = config('services.pappers.api_key');
+        $apiKey = trim((string) config('services.pappers.api_key'));
 
         if (!$apiKey) {
             return null;
@@ -33,6 +33,7 @@ class PappersApiService
         try {
             $response = Http::timeout(25)
                 ->acceptJson()
+                ->retry(2, 300)
                 ->get($endpoint, [
                     'api_token' => $apiKey,
                     'siren' => $siren,
@@ -50,12 +51,14 @@ class PappersApiService
                 $json
             );
 
-            if (!$response->successful()) {
+            if (!$response->successful() || !is_array($json)) {
                 return null;
             }
 
-            $dirigeant = $json['representants'][0] ?? null;
             $siege = $json['siege'] ?? [];
+            $dirigeant = $json['representants'][0] ?? null;
+
+            $capital = $this->extractCapital($json);
 
             return [
                 'siren' => $json['siren'] ?? $siren,
@@ -66,19 +69,38 @@ class PappersApiService
                     ?? $json['denomination_sociale']
                     ?? null,
 
-                'forme_juridique' => $json['forme_juridique'] ?? null,
-                'capital_social' => $json['capital'] ?? $json['capital_social'] ?? null,
+                'forme_juridique' => $json['forme_juridique']
+                    ?? $json['forme_juridique_code']
+                    ?? null,
 
-                'chiffre_affaires' => $json['chiffre_affaires'] ?? null,
-                'resultat' => $json['resultat'] ?? null,
-                'effectif' => $json['effectif'] ?? null,
+                'capital_social' => $capital,
+
+                'chiffre_affaires' => $this->formatMoney(
+                    $json['chiffre_affaires']
+                        ?? $json['chiffre_affaires_2024']
+                        ?? $json['chiffre_affaires_2023']
+                        ?? $json['chiffre_affaires_2022']
+                        ?? null
+                ),
+
+                'resultat' => $this->formatMoney(
+                    $json['resultat']
+                        ?? $json['resultat_2024']
+                        ?? $json['resultat_2023']
+                        ?? $json['resultat_2022']
+                        ?? null
+                ),
+
+                'effectif' => $json['effectif']
+                    ?? $json['effectif_min']
+                    ?? null,
+
                 'date_creation' => $json['date_creation'] ?? null,
 
-                'dirigeant_principal' => $dirigeant
-                    ? trim(($dirigeant['prenom'] ?? '') . ' ' . ($dirigeant['nom'] ?? ''))
-                    : null,
+                'dirigeant_principal' => $this->formatDirigeant($dirigeant),
 
                 'adresse_complete' => $siege['adresse_ligne_1']
+                    ?? $siege['adresse_ligne_2']
                     ?? $siege['adresse']
                     ?? null,
 
@@ -103,5 +125,81 @@ class PappersApiService
 
             return null;
         }
+    }
+
+   private function extractCapital(array $json): ?string
+{
+    $capital = $json['capital']
+        ?? $json['capital_social']
+        ?? $json['capital_actuel_si_variable']
+        ?? $json['capital_formate']
+        ?? data_get($json, 'details.capital');
+
+    if (!$capital) {
+        $capital = collect($json['publications_bodacc'] ?? [])
+            ->filter(fn ($publication) => !empty($publication['capital']))
+            ->sortByDesc(fn ($publication) => $publication['date'] ?? '')
+            ->pluck('capital')
+            ->first();
+    }
+
+    if (!$capital) {
+        $capital = collect($json['publications_bodacc'] ?? [])
+            ->filter(fn ($publication) => !empty($publication['description']))
+            ->map(fn ($publication) => $this->extractCapitalFromText($publication['description']))
+            ->filter()
+            ->first();
+    }
+
+    return $this->formatMoney($capital);
+}
+
+private function extractCapitalFromText(?string $text): ?string
+{
+    if (!$text) {
+        return null;
+    }
+
+    if (preg_match('/capital(?: social)?[^0-9]*(\d[\d\s.,]*)\s*(?:€|euros|eur)?/i', $text, $matches)) {
+        return $matches[1];
+    }
+    return null;
+}
+
+
+    private function formatMoney(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $clean = str_replace([' ', '€', ','], ['', '', '.'], $value);
+
+            if (is_numeric($clean)) {
+                return number_format((float) $clean, 0, ',', ' ') . ' €';
+            }
+
+            return trim($value);
+        }
+
+        if (is_numeric($value)) {
+            return number_format((float) $value, 0, ',', ' ') . ' €';
+        }
+
+        return null;
+    }
+
+    private function formatDirigeant(?array $dirigeant): ?string
+    {
+        if (!$dirigeant) {
+            return null;
+        }
+
+        return trim(
+            ($dirigeant['prenom'] ?? '') . ' ' .
+                ($dirigeant['nom'] ?? '') . ' ' .
+                ($dirigeant['denomination'] ?? '')
+        ) ?: null;
     }
 }
