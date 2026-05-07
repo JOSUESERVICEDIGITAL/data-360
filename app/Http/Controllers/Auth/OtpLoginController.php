@@ -46,7 +46,15 @@ class OtpLoginController extends Controller
 
         session()->forget(['otp_login_user_id', 'otp_remember']);
 
-        return redirect()->intended(route('dashboard'));
+        if ($user->is_admin) {
+            return redirect()->route('back.dashboard');
+        }
+
+        if ((int) $user->credits > 0) {
+            return redirect()->route('front.home');
+        }
+
+        return redirect()->route('front.credits.buy');
     }
 
     public function resend(Request $request, PhoneOtpService $otpService)

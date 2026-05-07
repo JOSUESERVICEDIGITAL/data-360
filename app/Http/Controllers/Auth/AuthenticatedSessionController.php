@@ -39,15 +39,18 @@ class AuthenticatedSessionController extends Controller
                 'email' => 'Votre compte est suspendu.',
             ])->onlyInput('email');
         }
+
         if ($user->otp_bypass || $user->is_admin) {
             Auth::login($user, (bool) $request->boolean('remember'));
+
+            $request->session()->regenerate();
 
             $user->update([
                 'last_login_ip' => $request->ip(),
                 'last_login_at' => now(),
             ]);
 
-            return redirect()->intended(route('dashboard'));
+            return $this->redirectAfterLogin($user);
         }
 
         if (!$user->phone) {
@@ -74,5 +77,18 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/');
+    }
+
+    private function redirectAfterLogin(User $user): RedirectResponse
+    {
+        if ($user->is_admin) {
+            return redirect()->route('back.dashboard');
+        }
+
+        if ((int) $user->credits > 0) {
+            return redirect()->route('front.home');
+        }
+
+        return redirect()->route('front.credits.buy');
     }
 }

@@ -72,9 +72,9 @@ class RegisteredUserController extends Controller
 
         $blocked = BlockedIdentity::active()
             ->where(function ($query) use ($ip, $fingerprintHash, $domain) {
-                $query->where(fn ($q) => $q->where('type', 'ip')->where('value', $ip))
-                    ->orWhere(fn ($q) => $q->where('type', 'fingerprint')->where('value', $fingerprintHash))
-                    ->orWhere(fn ($q) => $q->where('type', 'email_domain')->where('value', $domain));
+                $query->where(fn($q) => $q->where('type', 'ip')->where('value', $ip))
+                    ->orWhere(fn($q) => $q->where('type', 'fingerprint')->where('value', $fingerprintHash))
+                    ->orWhere(fn($q) => $q->where('type', 'email_domain')->where('value', $domain));
             })
             ->first();
 
@@ -149,8 +149,7 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
-        return redirect()
-            ->route('dashboard')
-            ->with('success', 'Compte créé. Vous devez obtenir des crédits ou effectuer un paiement pour continuer.');
+        return redirect()->route('front.credits.buy')
+            ->with('success', 'Compte créé. Achetez des crédits ou contactez l’administrateur.');
     }
 }

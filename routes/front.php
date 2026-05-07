@@ -16,3 +16,7 @@ Route::name('front.')->group(function () {
 });
 
 
+Route::get('/credits/acheter', function () {
+    return view('front.credits.buy');
+})->middleware(['auth'])->name('front.credits.buy');
+

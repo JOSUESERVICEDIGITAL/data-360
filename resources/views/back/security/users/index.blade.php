@@ -100,12 +100,29 @@
             transform: translateY(0);
         }
 
-        .sec-btn.green { background: #10b981; }
-        .sec-btn.red { background: #ef4444; }
-        .sec-btn.orange { background: #f59e0b; }
-        .sec-btn.gray { background: #64748b; }
-        .sec-btn.dark { background: #1e293b; }
-        .sec-btn.purple { background: #8b5cf6; }
+        .sec-btn.green {
+            background: #10b981;
+        }
+
+        .sec-btn.red {
+            background: #ef4444;
+        }
+
+        .sec-btn.orange {
+            background: #f59e0b;
+        }
+
+        .sec-btn.gray {
+            background: #64748b;
+        }
+
+        .sec-btn.dark {
+            background: #1e293b;
+        }
+
+        .sec-btn.purple {
+            background: #8b5cf6;
+        }
 
         .sec-table-wrap {
             overflow-x: auto;
@@ -151,11 +168,30 @@
             white-space: nowrap;
         }
 
-        .badge.green { background: #d1fae5; color: #065f46; }
-        .badge.red { background: #fee2e2; color: #991b1b; }
-        .badge.blue { background: #dbeafe; color: #1e40af; }
-        .badge.gray { background: #f1f5f9; color: #475569; }
-        .badge.yellow { background: #fed7aa; color: #9a3412; }
+        .badge.green {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge.red {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge.blue {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge.gray {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .badge.yellow {
+            background: #fed7aa;
+            color: #9a3412;
+        }
 
         .credit-form {
             display: flex;
@@ -206,6 +242,7 @@
                 opacity: 0;
                 transform: translateY(-10px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -259,10 +296,13 @@
             .sec-page {
                 padding: 1rem;
             }
+
             .sec-card {
                 padding: 1rem;
             }
-            .actions, .credit-form {
+
+            .actions,
+            .credit-form {
                 flex-direction: column;
             }
         }
@@ -282,6 +322,26 @@
                 <a href="#" class="sec-btn purple">
                     📥 Export CSV
                 </a>
+            </div>
+
+            <!-- Dans le sec-header, après le lien 'Identités bloquées' -->
+            <div class="sec-header">
+                <div class="sec-title">
+                    <h1>🔐 Gestion des utilisateurs</h1>
+                    <p>Gérez les comptes, crédits, suspensions, accès admin et sécurité</p>
+                </div>
+
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <a href="{{ route('admin.security.users.create') }}" class="sec-btn green" style="background: #10b981;">
+                        ➕ Ajouter un utilisateur
+                    </a>
+                    <a href="{{ route('admin.security.blocked.index') }}" class="sec-btn dark">
+                        🚫 Identités bloquées
+                    </a>
+                    <a href="#" class="sec-btn purple">
+                        📥 Export CSV
+                    </a>
+                </div>
             </div>
         </div>
 
@@ -326,7 +386,8 @@
                                 <td>
                                     <strong class="tooltip" data-tip="{{ $user->id }}">{{ $user->name }}</strong><br>
                                     <span style="font-size: 0.75rem; color: #475569;">{{ $user->email }}</span><br>
-                                    <span style="font-size: 0.7rem; color: #94a3b8;">{{ $user->phone ?? 'Téléphone non renseigné' }}</span>
+                                    <span
+                                        style="font-size: 0.7rem; color: #94a3b8;">{{ $user->phone ?? 'Téléphone non renseigné' }}</span>
                                 </td>
 
                                 <td>
@@ -364,11 +425,13 @@
 
                                 <td>
                                     <code style="font-size: 0.7rem;">{{ $user->last_login_ip ?? '-' }}</code><br>
-                                    <small style="color: #94a3b8;">{{ optional($user->last_login_at)->format('d/m/Y H:i') ?? '-' }}</small>
+                                    <small
+                                        style="color: #94a3b8;">{{ optional($user->last_login_at)->format('d/m/Y H:i') ?? '-' }}</small>
                                 </td>
 
                                 <td>
-                                    <form method="POST" action="{{ route('admin.security.users.giveCredits') }}" class="credit-form">
+                                    <form method="POST" action="{{ route('admin.security.users.giveCredits') }}"
+                                        class="credit-form">
                                         @csrf
                                         <input type="hidden" name="user_id" value="{{ $user->id }}">
                                         <input type="number" name="amount" min="1" value="10" required>
@@ -376,7 +439,8 @@
                                         <button class="sec-btn green" type="submit">➕ Ajouter</button>
                                     </form>
 
-                                    <form method="POST" action="{{ route('admin.security.users.removeCredits') }}" class="credit-form">
+                                    <form method="POST" action="{{ route('admin.security.users.removeCredits') }}"
+                                        class="credit-form">
                                         @csrf
                                         <input type="hidden" name="user_id" value="{{ $user->id }}">
                                         <input type="number" name="amount" min="1" value="10" required>
@@ -387,7 +451,8 @@
 
                                 <td>
                                     <div class="actions">
-                                        <form method="POST" action="{{ route('admin.security.users.toggleActive', $user) }}" class="action-form">
+                                        <form method="POST" action="{{ route('admin.security.users.toggleActive', $user) }}"
+                                            class="action-form">
                                             @csrf
                                             <button class="sec-btn {{ $user->is_active ? 'red' : 'green' }}" type="submit">
                                                 {{ $user->is_active ? '⛔ Suspendre' : '✅ Réactiver' }}
@@ -410,7 +475,8 @@
                                             </form>
                                         @endif
 
-                                        <form method="POST" action="{{ route('admin.security.blocked.store') }}" class="ban-form">
+                                        <form method="POST" action="{{ route('admin.security.blocked.store') }}"
+                                            class="ban-form">
                                             @csrf
                                             <input type="hidden" name="type" value="user">
                                             <input type="hidden" name="value" value="{{ $user->id }}">
@@ -436,7 +502,8 @@
                                         </form>
 
                                         @if($user->last_login_ip)
-                                            <form method="POST" action="{{ route('admin.security.blocked.store') }}" class="ip-ban-form">
+                                            <form method="POST" action="{{ route('admin.security.blocked.store') }}"
+                                                class="ip-ban-form">
                                                 @csrf
                                                 <input type="hidden" name="type" value="ip">
                                                 <input type="hidden" name="value" value="{{ $user->last_login_ip }}">
@@ -447,8 +514,24 @@
                                                 </button>
                                             </form>
                                         @endif
+
+                                        <!-- Lien vers l'édition -->
+                                        <a href="{{ route('admin.security.users.edit', $user) }}" class="sec-btn blue"
+                                            style="background: #3b82f6; text-decoration: none; padding: 0.4rem 0.8rem;">
+                                            ✏️ Modifier
+                                        </a>
+
+                                        <!-- Vos autres boutons existants -->
+                                        <form method="POST" action="{{ route('admin.security.users.toggleActive', $user) }}"
+                                            class="action-form">
+                                            @csrf
+                                            <button class="sec-btn {{ $user->is_active ? 'red' : 'green' }}" type="submit">
+                                                {{ $user->is_active ? '⛔ Suspendre' : '✅ Réactiver' }}
+                                            </button>
+                                        </form>
                                     </div>
                                 </td>
+
                             </tr>
                         @empty
                             <tr>
@@ -470,11 +553,11 @@
     </div>
 
     <script>
-        (function() {
+        (function () {
             // Confirmation avant action sensible
             const confirmForms = document.querySelectorAll('.action-form, .ban-form, .ip-ban-form');
             confirmForms.forEach(form => {
-                form.addEventListener('submit', function(e) {
+                form.addEventListener('submit', function (e) {
                     const action = this.querySelector('button')?.innerText || 'cette action';
                     if (!confirm(`⚠️ Êtes-vous sûr de vouloir effectuer "${action}" ?`)) {
                         e.preventDefault();

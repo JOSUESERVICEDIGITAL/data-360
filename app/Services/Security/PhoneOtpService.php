@@ -6,7 +6,10 @@ use App\Models\Back\PhoneOtp;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Twilio\Rest\Client;
+use Illuminate\Support\Facades\Mail;
+use Vonage\Client;
+use Vonage\Client\Credentials\Basic;
+use Vonage\SMS\Message\SMS;
 
 class PhoneOtpService
 {
@@ -29,7 +32,13 @@ class PhoneOtpService
             'expires_at' => now()->addMinutes(10),
         ]);
 
-        $this->sendSms($user->phone, $code);
+        if (config('services.otp.channel') === 'sms') {
+            if ($this->sendSmsVonage($user, $code)) {
+                return $code;
+            }
+        }
+
+        $this->sendOtpEmail($user, $code);
 
         return $code;
     }
@@ -69,35 +78,82 @@ class PhoneOtpService
         return true;
     }
 
-    private function sendSms(string $phone, string $code): void
-{
-    $sid = config('services.twilio.sid');
-    $token = config('services.twilio.token');
-    $from = config('services.twilio.from');
+    private function sendSmsVonage(User $user, string $code): bool
+    {
+        $apiKey = config('services.vonage.api_key');
+        $apiSecret = config('services.vonage.api_secret');
+        $from = config('services.vonage.from', 'Data360');
 
-    if (!$sid || !$token || !$from) {
-        \Log::warning('Twilio non configuré', [
-            'phone' => $phone,
-            'code_debug_local' => app()->isLocal() ? $code : null,
-        ]);
+        if (!$apiKey || !$apiSecret || !$user->phone) {
+            Log::warning('Vonage OTP non configuré ou téléphone absent', [
+                'user_id' => $user->id,
+                'phone' => $user->phone,
+            ]);
 
-        return;
+            return false;
+        }
+
+        try {
+            $to = $this->normalizePhoneForVonage($user->phone);
+
+            $client = new Client(new Basic($apiKey, $apiSecret));
+
+            $message = new SMS(
+                $to,
+                $from,
+                "Code Data 360 : {$code}. Expire dans 10 minutes."
+            );
+
+            $response = $client->sms()->send($message);
+            $sms = $response->current();
+
+            if ((string) $sms->getStatus() !== '0') {
+                Log::error('Vonage OTP refusé', [
+                    'user_id' => $user->id,
+                    'phone_original' => $user->phone,
+                    'phone_vonage' => $to,
+                    'status' => $sms->getStatus(),
+                    'message_id' => $sms->getMessageId(),
+                ]);
+
+                return false;
+            }
+
+            Log::info('Vonage OTP envoyé', [
+                'user_id' => $user->id,
+                'phone_vonage' => $to,
+                'message_id' => $sms->getMessageId(),
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('Exception Vonage OTP', [
+                'user_id' => $user->id,
+                'phone' => $user->phone,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
-    try {
-        $client = new \Twilio\Rest\Client($sid, $token);
-
-        $client->messages->create($phone, [
-            'from' => $from,
-            'body' => "Votre code Data 360 est : {$code}. Il expire dans 10 minutes.",
-        ]);
-    } catch (\Throwable $e) {
-        \Log::error('Erreur SMS Twilio', [
-            'phone' => $phone,
-            'from' => $from,
-            'error' => $e->getMessage(),
-            'code_debug_local' => app()->isLocal() ? $code : null,
-        ]);
+    private function sendOtpEmail(User $user, string $code): void
+    {
+        Mail::raw(
+            "Bonjour {$user->name},\n\nVotre code de connexion Data 360 est : {$code}\n\nCe code expire dans 10 minutes.\n\nSi vous n’êtes pas à l’origine de cette demande, ignorez ce message.",
+            function ($message) use ($user) {
+                $message->to($user->email)
+                    ->subject('Code de connexion Data 360');
+            }
+        );
     }
-}
+
+    private function normalizePhoneForVonage(string $phone): string
+    {
+        $phone = trim($phone);
+        $phone = preg_replace('/\s+/', '', $phone);
+        $phone = preg_replace('/[^\d+]/', '', $phone);
+
+        return ltrim($phone, '+');
+    }
 }

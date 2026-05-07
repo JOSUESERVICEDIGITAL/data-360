@@ -63,9 +63,13 @@ return [
     'proxycheck' => [
         'api_key' => env('PROXYCHECK_API_KEY'),
     ],
-    'twilio' => [
-    'sid' => env('TWILIO_SID'),
-    'token' => env('TWILIO_TOKEN'),
-    'from' => env('TWILIO_FROM'),
-],
+    'otp' => [
+        'channel' => env('OTP_CHANNEL', 'email'),
+    ],
+
+    'vonage' => [
+        'api_key' => env('VONAGE_API_KEY'),
+        'api_secret' => env('VONAGE_API_SECRET'),
+        'from' => env('VONAGE_FROM', 'Data360'),
+    ],
 ];

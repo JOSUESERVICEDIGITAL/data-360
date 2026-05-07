@@ -41,7 +41,7 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/') . '/storage',
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
@@ -60,6 +60,15 @@ return [
             'report' => false,
         ],
 
+
+        'inpi_sftp' => [
+            'driver' => 'sftp',
+            'host' => env('INPI_SFTP_HOST'),
+            'username' => env('INPI_SFTP_USERNAME'),
+            'password' => env('INPI_SFTP_PASSWORD'),
+            'root' => env('INPI_SFTP_ROOT', '/'),
+            'timeout' => 30,
+        ],
     ],
 
     /*
@@ -76,5 +85,7 @@ return [
     'links' => [
         public_path('storage') => storage_path('app/public'),
     ],
+
+
 
 ];
