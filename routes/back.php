@@ -8,7 +8,6 @@ use App\Http\Controllers\Back\CoproprieteController;
 use App\Http\Controllers\Back\SyndicController;
 use App\Http\Controllers\Back\RechercheController;
 use App\Http\Controllers\Back\ImportCsvController;
-use App\Http\Controllers\Back\UserController;
 
 Route::middleware(['auth'])
     ->prefix('back')
@@ -59,14 +58,6 @@ Route::middleware(['auth'])
         Route::delete('imports/{importCsv}', [ImportCsvController::class, 'destroy'])->name('imports.destroy');
 
 
-         Route::prefix('users')->name('users.')->group(function () {
-            Route::get('/', [UserController::class, 'index'])->name('index');
-            Route::get('/create', [UserController::class, 'create'])->name('create');
-            Route::post('/store', [UserController::class, 'store'])->name('store');
-            Route::get('/{user}/edit', [UserController::class, 'edit'])->name('edit');
-            Route::put('/{user}', [UserController::class, 'update'])->name('update');
-        });
-       
-    });
 
-    
+
+    });

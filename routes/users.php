@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Back\AdminUserCreditController;
 use App\Http\Controllers\Back\BlockedIdentityController;
+use App\Http\Controllers\Back\UserController;
 
 Route::middleware(['auth'])
     ->prefix('admin/security')
@@ -34,6 +35,14 @@ Route::middleware(['auth'])
         Route::post('/users/{user}/remove-admin', [AdminUserCreditController::class, 'removeAdmin'])
             ->name('users.removeAdmin');
 
+
+             Route::prefix('users')->name('users.')->group(function () {
+            Route::get('/', [UserController::class, 'index'])->name('index');
+            Route::get('/create', [UserController::class, 'create'])->name('create');
+            Route::post('/store', [UserController::class, 'store'])->name('store');
+            Route::get('/{user}/edit', [UserController::class, 'edit'])->name('edit');
+            Route::put('/{user}', [UserController::class, 'update'])->name('update');
+        });
 
         /*
         |--------------------------------------------------------------------------
