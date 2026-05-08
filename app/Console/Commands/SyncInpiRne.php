@@ -47,7 +47,24 @@ class SyncInpiRne extends Command
             $this->info("Téléchargement : {$remoteFile}");
 
             if (!file_exists($localPath)) {
-                file_put_contents($localPath, $disk->get($remoteFile));
+                $stream = $disk->readStream($remoteFile);
+
+                if (!$stream) {
+                    $this->error("Impossible de lire : {$remoteFile}");
+                    continue;
+                }
+
+                $localStream = fopen($localPath, 'w+b');
+
+                stream_copy_to_stream($stream, $localStream);
+
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+
+                if (is_resource($localStream)) {
+                    fclose($localStream);
+                }
             } else {
                 $this->line("Déjà téléchargé : {$filename}");
             }

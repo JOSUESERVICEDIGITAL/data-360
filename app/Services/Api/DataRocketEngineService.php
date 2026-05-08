@@ -8,6 +8,8 @@ use App\Models\Back\Copropriete;
 use App\Models\Back\Recherche;
 use App\Models\Back\Syndic;
 use Illuminate\Support\Facades\Auth;
+use App\Services\Api\QpvEligibilityService;
+
 
 class DataRocketEngineService
 {
@@ -18,12 +20,14 @@ class DataRocketEngineService
         protected CoproprieteApiService $coproprieteApi,
         protected SireneApiService $sireneApi,
         protected PappersApiService $pappersApi,
+        protected QpvEligibilityService $qpvEligibilityService,
     ) {
     }
 
     public function searchByAddress(string $query): array
     {
         $geo = $this->adresseApi->search($query);
+        $qpvChecks = $this->checkQpvForBanCandidates($geo);
 
         if (!$geo) {
             $recherche = Recherche::create([
@@ -44,6 +48,7 @@ class DataRocketEngineService
                 'coproprietes' => [],
                 'syndics' => [],
                 'proprietaires_bdnb' => [],
+                
             ];
         }
 
@@ -238,6 +243,7 @@ class DataRocketEngineService
                 'coproprietes' => collect($coproprietes)->map->toArray(),
                 'syndics' => collect($syndics)->map->toArray(),
                 'proprietaires_bdnb' => $proprietairesBdnb,
+                'qpv' => $qpvChecks,
             ],
         ]);
 
@@ -254,6 +260,7 @@ class DataRocketEngineService
             'coproprietes' => $coproprietes,
             'syndics' => $syndics,
             'proprietaires_bdnb' => $proprietairesBdnb,
+            'qpv' => $qpvChecks,
         ];
     }
 
@@ -461,4 +468,49 @@ class DataRocketEngineService
 
         return min($score, 100);
     }
+
+    private function checkQpvForBanCandidates(array $geo): array
+{
+    $candidates = $geo['ban_candidates'] ?? [];
+
+    if (empty($candidates)) {
+        $candidates = [[
+            'adresse' => $geo['adresse_complete'] ?? null,
+            'latitude' => $geo['latitude'] ?? null,
+            'longitude' => $geo['longitude'] ?? null,
+            'score' => null,
+            'source' => 'BAN',
+        ]];
+    }
+
+    $checks = [];
+
+    foreach ($candidates as $candidate) {
+        $check = $this->qpvEligibilityService->check(
+            isset($candidate['latitude']) ? (float) $candidate['latitude'] : null,
+            isset($candidate['longitude']) ? (float) $candidate['longitude'] : null
+        );
+
+        $checks[] = [
+            'candidate' => $candidate,
+            'result' => $check,
+        ];
+    }
+
+    $hasGreen = collect($checks)->contains(function ($item) {
+        return ($item['result']['qp_2024'] ?? false)
+            || ($item['result']['qp_2015'] ?? false)
+            || ($item['result']['zfu'] ?? false);
+    });
+
+    return [
+        'eligible' => !$hasGreen,
+        'message' => $hasGreen
+            ? 'Adresse non éligible : au moins un point BAN est situé en QPV/ZFU.'
+            : 'Adresse éligible : aucun des points BAN testés n’est en QPV/ZFU.',
+        'strategy' => 'multi_points_ban',
+        'candidates_tested' => count($checks),
+        'checks' => $checks,
+    ];
+}
 }

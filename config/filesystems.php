@@ -2,31 +2,7 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Default Filesystem Disk
-    |--------------------------------------------------------------------------
-    |   za
-    | Here you may specify the default filesystem disk that should be used
-    | by the framework. The "local" disk, as well as a variety of cloud
-    | based disks are available to your application for file storage.
-    |
-    */
-
     'default' => env('FILESYSTEM_DISK', 'local'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Filesystem Disks
-    |--------------------------------------------------------------------------
-    |
-    | Below you may configure as many filesystem disks as necessary, and you
-    | may even configure multiple disks for the same driver. Examples for
-    | most supported storage drivers are configured here for reference.
-    |
-    | Supported drivers: "local", "ftp", "sftp", "s3"
-    |
-    */
 
     'disks' => [
 
@@ -60,32 +36,27 @@ return [
             'report' => false,
         ],
 
-
+        /*
+        |--------------------------------------------------------------------------
+        | INPI RNE FTP
+        |--------------------------------------------------------------------------
+        */
         'inpi_sftp' => [
-            'driver' => 'sftp',
-            'host' => env('INPI_SFTP_HOST'),
+            'driver' => 'ftp',
+            'host' => env('INPI_SFTP_HOST', 'www.inpi.net'),
             'username' => env('INPI_SFTP_USERNAME'),
             'password' => env('INPI_SFTP_PASSWORD'),
             'root' => env('INPI_SFTP_ROOT', '/'),
-            'timeout' => 30,
+            'port' => (int) env('INPI_SFTP_PORT', 21),
+            'passive' => true,
+            'ssl' => false,
+            'timeout' => 120,
+            'ignore_passive_address' => true,
+            'throw' => true,
         ],
     ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Symbolic Links
-    |--------------------------------------------------------------------------
-    |
-    | Here you may configure the symbolic links that will be created when the
-    | `storage:link` Artisan command is executed. The array keys should be
-    | the locations of the links and the values should be their targets.
-    |
-    */
 
     'links' => [
         public_path('storage') => storage_path('app/public'),
     ],
-
-
-
 ];

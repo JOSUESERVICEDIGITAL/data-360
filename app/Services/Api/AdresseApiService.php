@@ -8,7 +8,8 @@ class AdresseApiService
 {
     public function __construct(
         protected ApiLoggerService $logger
-    ) {}
+    ) {
+    }
 
     public function search(string $adresse): ?array
     {
@@ -59,6 +60,26 @@ class AdresseApiService
                 'source' => 'geocodage',
                 'raw_data' => $feature,
                 'suggestions' => $json['features'] ?? [],
+
+                'ban_candidates' => collect($json['features'] ?? [])
+                    ->take(3)
+                    ->map(function ($feature) {
+                        $props = $feature['properties'] ?? [];
+                        $coords = $feature['geometry']['coordinates'] ?? [];
+
+                        return [
+                            'adresse' => $props['label'] ?? null,
+                            'score' => $props['score'] ?? null,
+                            'latitude' => $coords[1] ?? null,
+                            'longitude' => $coords[0] ?? null,
+                            'code_postal' => $props['postcode'] ?? null,
+                            'ville' => $props['city'] ?? null,
+                            'source' => 'BAN',
+                        ];
+                    })
+                    ->filter(fn($item) => $item['latitude'] && $item['longitude'])
+                    ->values()
+                    ->toArray(),
             ];
         } catch (\Throwable $e) {
             $this->logger->log('GEOCODAGE', $endpoint, $adresse, null, false, ['q' => $adresse], null, $e->getMessage());
