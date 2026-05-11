@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'Data Rocket - Données des adresses françaises')</title>
+    <title>@yield('title', 'Data 360 - Données des adresses françaises')</title>
 
     @include('front.partials.styles')
 </head>

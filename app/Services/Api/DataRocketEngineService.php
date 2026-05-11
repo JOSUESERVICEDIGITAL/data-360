@@ -8,8 +8,6 @@ use App\Models\Back\Copropriete;
 use App\Models\Back\Recherche;
 use App\Models\Back\Syndic;
 use Illuminate\Support\Facades\Auth;
-use App\Services\Api\QpvEligibilityService;
-
 
 class DataRocketEngineService
 {
@@ -21,13 +19,13 @@ class DataRocketEngineService
         protected SireneApiService $sireneApi,
         protected PappersApiService $pappersApi,
         protected QpvEligibilityService $qpvEligibilityService,
+        protected RnbApiService $rnbApi,
     ) {
     }
 
     public function searchByAddress(string $query): array
     {
         $geo = $this->adresseApi->search($query);
-        $qpvChecks = $this->checkQpvForBanCandidates($geo);
 
         if (!$geo) {
             $recherche = Recherche::create([
@@ -48,9 +46,12 @@ class DataRocketEngineService
                 'coproprietes' => [],
                 'syndics' => [],
                 'proprietaires_bdnb' => [],
-                
+                'qpv' => null,
+                'rnb' => null,
             ];
         }
+
+        $qpvChecks = $this->checkQpvForBanCandidates($geo);
 
         $adresse = Adresse::updateOrCreate(
             ['adresse_complete' => $geo['adresse_complete']],
@@ -73,8 +74,15 @@ class DataRocketEngineService
             $geo['code_insee'] ?? null
         );
 
-        $batimentsApi = [];
+        $rnb = $this->rnbApi->searchSmart([
+            'address' => $geo['adresse_complete'] ?? $query,
+            'latitude' => $geo['latitude'] ?? null,
+            'longitude' => $geo['longitude'] ?? null,
+            'plot_id' => $cadastre[0]['id_parcelle'] ?? null,
+            'cle_interop_ban' => $geo['cle_interop_ban'] ?? null,
+        ]);
 
+        $batimentsApi = [];
         $parcelleId = $cadastre[0]['id_parcelle'] ?? null;
 
         if ($parcelleId) {
@@ -220,11 +228,13 @@ class DataRocketEngineService
 
         $syndics = collect($syndics)
             ->filter()
-            ->unique(fn($syndic) => $syndic->siret ?: $syndic->siren ?: $syndic->nom)
+            ->unique(fn ($syndic) => $syndic->siret ?: $syndic->siren ?: $syndic->nom)
             ->values()
             ->all();
 
-        $statut = count($batiments) || count($coproprietes) ? 'trouve' : 'partiel';
+        $statut = count($batiments) || count($coproprietes) || !empty($rnb['batiments'])
+            ? 'trouve'
+            : 'partiel';
 
         $message = $statut === 'trouve'
             ? 'Adresse enrichie avec les sources disponibles.'
@@ -239,6 +249,7 @@ class DataRocketEngineService
             'resultat' => [
                 'adresse' => $geo,
                 'cadastre' => $cadastre,
+                'rnb' => $rnb,
                 'batiments' => collect($batiments)->map->toArray(),
                 'coproprietes' => collect($coproprietes)->map->toArray(),
                 'syndics' => collect($syndics)->map->toArray(),
@@ -256,6 +267,7 @@ class DataRocketEngineService
                 'coproprietes.syndics',
             ]),
             'cadastre' => $cadastre,
+            'rnb' => $rnb,
             'batiments' => $batiments,
             'coproprietes' => $coproprietes,
             'syndics' => $syndics,
@@ -364,7 +376,7 @@ class DataRocketEngineService
         }
 
         return collect($items)
-            ->unique(fn($item) => ($item['siren'] ?? '') . '|' . ($item['nom'] ?? ''))
+            ->unique(fn ($item) => ($item['siren'] ?? '') . '|' . ($item['nom'] ?? ''))
             ->values()
             ->toArray();
     }
@@ -407,7 +419,7 @@ class DataRocketEngineService
         }
 
         $scored = collect($batiments)
-            ->map(fn($batiment) => [
+            ->map(fn ($batiment) => [
                 'score' => $this->mainBuildingScore($batiment),
                 'data' => $batiment,
             ])
@@ -430,23 +442,37 @@ class DataRocketEngineService
         $surface = (float) ($batiment['surface_emprise_sol'] ?? 0);
         $annee = $batiment['annee_construction'] ?? null;
 
-        if ($type === 'collectif')
+        if ($type === 'collectif') {
             $score += 50;
-        if ($type === 'individuel')
-            $score += 30;
-        if ($type === 'inconnu')
-            $score -= 20;
+        }
 
-        if ($logements > 0)
+        if ($type === 'individuel') {
+            $score += 30;
+        }
+
+        if ($type === 'inconnu') {
+            $score -= 20;
+        }
+
+        if ($logements > 0) {
             $score += min($logements, 50);
-        if ($niveaux > 0)
+        }
+
+        if ($niveaux > 0) {
             $score += $niveaux * 5;
-        if ($hauteur > 3)
+        }
+
+        if ($hauteur > 3) {
             $score += (int) $hauteur;
-        if ($surface > 0)
+        }
+
+        if ($surface > 0) {
             $score += min((int) ($surface / 20), 30);
-        if ($annee)
+        }
+
+        if ($annee) {
             $score += 10;
+        }
 
         return $score;
     }
@@ -455,62 +481,71 @@ class DataRocketEngineService
     {
         $score = 0;
 
-        if (($batiment['type_batiment'] ?? null) === 'collectif')
+        if (($batiment['type_batiment'] ?? null) === 'collectif') {
             $score += 30;
-        if (($batiment['nombre_logements'] ?? 0) >= 10)
+        }
+
+        if (($batiment['nombre_logements'] ?? 0) >= 10) {
             $score += 25;
-        if (($batiment['nombre_niveaux'] ?? 0) >= 3)
+        }
+
+        if (($batiment['nombre_niveaux'] ?? 0) >= 3) {
             $score += 15;
-        if (!empty($batiment['annee_construction']) && $batiment['annee_construction'] < 1990)
+        }
+
+        if (!empty($batiment['annee_construction']) && $batiment['annee_construction'] < 1990) {
             $score += 20;
-        if (in_array($batiment['classe_dpe'] ?? null, ['E', 'F', 'G'], true))
+        }
+
+        if (in_array($batiment['classe_dpe'] ?? null, ['E', 'F', 'G'], true)) {
             $score += 10;
+        }
 
         return min($score, 100);
     }
 
     private function checkQpvForBanCandidates(array $geo): array
-{
-    $candidates = $geo['ban_candidates'] ?? [];
+    {
+        $candidates = $geo['ban_candidates'] ?? [];
 
-    if (empty($candidates)) {
-        $candidates = [[
-            'adresse' => $geo['adresse_complete'] ?? null,
-            'latitude' => $geo['latitude'] ?? null,
-            'longitude' => $geo['longitude'] ?? null,
-            'score' => null,
-            'source' => 'BAN',
-        ]];
-    }
+        if (empty($candidates)) {
+            $candidates = [[
+                'adresse' => $geo['adresse_complete'] ?? null,
+                'latitude' => $geo['latitude'] ?? null,
+                'longitude' => $geo['longitude'] ?? null,
+                'score' => null,
+                'source' => 'BAN',
+            ]];
+        }
 
-    $checks = [];
+        $checks = [];
 
-    foreach ($candidates as $candidate) {
-        $check = $this->qpvEligibilityService->check(
-            isset($candidate['latitude']) ? (float) $candidate['latitude'] : null,
-            isset($candidate['longitude']) ? (float) $candidate['longitude'] : null
-        );
+        foreach ($candidates as $candidate) {
+            $check = $this->qpvEligibilityService->check(
+                isset($candidate['latitude']) ? (float) $candidate['latitude'] : null,
+                isset($candidate['longitude']) ? (float) $candidate['longitude'] : null
+            );
 
-        $checks[] = [
-            'candidate' => $candidate,
-            'result' => $check,
+            $checks[] = [
+                'candidate' => $candidate,
+                'result' => $check,
+            ];
+        }
+
+        $hasZone = collect($checks)->contains(function ($item) {
+            return ($item['result']['qp_2024'] ?? false)
+                || ($item['result']['qp_2015'] ?? false)
+                || ($item['result']['zfu'] ?? false);
+        });
+
+        return [
+            'eligible' => !$hasZone,
+            'message' => $hasZone
+                ? 'Adresse non éligible : au moins un point BAN est situé en QPV/ZFU.'
+                : 'Adresse éligible : aucun des points BAN testés n’est en QPV/ZFU.',
+            'strategy' => 'multi_points_ban',
+            'candidates_tested' => count($checks),
+            'checks' => $checks,
         ];
     }
-
-    $hasGreen = collect($checks)->contains(function ($item) {
-        return ($item['result']['qp_2024'] ?? false)
-            || ($item['result']['qp_2015'] ?? false)
-            || ($item['result']['zfu'] ?? false);
-    });
-
-    return [
-        'eligible' => !$hasGreen,
-        'message' => $hasGreen
-            ? 'Adresse non éligible : au moins un point BAN est situé en QPV/ZFU.'
-            : 'Adresse éligible : aucun des points BAN testés n’est en QPV/ZFU.',
-        'strategy' => 'multi_points_ban',
-        'candidates_tested' => count($checks),
-        'checks' => $checks,
-    ];
-}
 }

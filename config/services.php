@@ -72,4 +72,9 @@ return [
         'api_secret' => env('VONAGE_API_SECRET'),
         'from' => env('VONAGE_FROM', 'Data360'),
     ],
+
+    'rnb' => [
+        'base_url' => env('RNB_BASE_URL', 'https://rnb-api.beta.gouv.fr/api/alpha'),
+        'from' => env('RNB_FROM'),
+    ],
 ];
