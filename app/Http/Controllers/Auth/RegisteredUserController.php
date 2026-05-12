@@ -45,6 +45,8 @@ class RegisteredUserController extends Controller
             'timezone' => ['nullable', 'string', 'max:100'],
             'language' => ['nullable', 'string', 'max:30'],
             'screen' => ['nullable', 'string', 'max:50'],
+            'otp_bypass' => ['nullable', 'boolean'],
+            'email_verified' => ['nullable', 'boolean'],
         ]);
 
         $email = strtolower((string) $request->input('email'));
@@ -119,6 +121,8 @@ class RegisteredUserController extends Controller
             'plan' => 'free',
             'last_login_ip' => $ip,
             'last_login_at' => now(),
+            'otp_bypass' => $request->input('otp_bypass'),
+            'email_verified' => $request->input('email_verified'),
         ]);
 
         VisitorDevice::updateOrCreate(

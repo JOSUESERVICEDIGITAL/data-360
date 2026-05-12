@@ -94,6 +94,7 @@ class SearchAccessController extends Controller
             ], 403);
         }
 
+        // Vérification des crédits avant recherche
         $permission = $this->creditService->canSearch($user, $device);
 
         if (!$permission['allowed']) {
@@ -118,10 +119,31 @@ class SearchAccessController extends Controller
             ], 402);
         }
 
+        // --- EXÉCUTION DE LA RECHERCHE ---
         $resultat = $this->engine->searchByAddress($query);
 
-        $this->creditService->consumeAfterSearch($user, $device, $resultat);
+        // --- DÉCRÉMENTATION DES CRÉDITS (APRÈS RECHERCHE RÉUSSIE) ---
+        $creditsConsumed = false;
+        $newCreditsCount = null;
 
+        if ($user && !$user->is_admin && ($resultat['success'] ?? false)) {
+            // Récupérer le solde avant
+            $creditsBefore = $user->credits;
+            
+            // Décrémentation via le service existant
+            $this->creditService->consumeAfterSearch($user, $device, $resultat);
+            
+            // Recharger pour avoir le nouveau solde
+            $user->refresh();
+            $newCreditsCount = $user->credits;
+            $creditsConsumed = ($creditsBefore > $newCreditsCount);
+            
+            // Mettre à jour le device avec le nouveau solde
+            $device->last_credits_balance = $newCreditsCount;
+            $device->save();
+        }
+
+        // Enregistrement de la tentative de recherche
         SearchAttempt::create([
             'user_id' => $user?->id,
             'visitor_device_id' => $device->id,
@@ -131,7 +153,9 @@ class SearchAccessController extends Controller
             'fingerprint_hash' => $fingerprintHash,
             'is_authenticated' => (bool) $user,
             'is_free_search' => !$user,
-            'credit_consumed' => $user && !$user->is_admin,
+            'credit_consumed' => $creditsConsumed,
+            'credits_before' => $user ? ($creditsConsumed ? ($newCreditsCount + 1) : $user->credits) : null,
+            'credits_after' => $user ? $user->credits : null,
             'success' => !empty($resultat['success']),
             'status' => 'allowed',
             'is_vpn' => $device->is_vpn,
@@ -146,13 +170,18 @@ class SearchAccessController extends Controller
             'raw_security_data' => $vpnData,
         ]);
 
+        // Retourner la vue avec les données mises à jour
         return view('front.recherche.result', [
             'q' => $query,
             'resultat' => $resultat,
             'adresse' => $resultat['adresse'] ?? null,
+            'new_credits' => $newCreditsCount,
         ]);
     }
 
+    /**
+     * Vérifie si l'utilisateur ou l'appareil est bloqué
+     */
     private function detectBlock($user, VisitorDevice $device, string $fingerprintHash, ?string $ip): ?string
     {
         if ($user && !$user->is_active) {

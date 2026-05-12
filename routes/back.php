@@ -8,8 +8,10 @@ use App\Http\Controllers\Back\CoproprieteController;
 use App\Http\Controllers\Back\SyndicController;
 use App\Http\Controllers\Back\RechercheController;
 use App\Http\Controllers\Back\ImportCsvController;
+use App\Http\Controllers\Back\NotificationController;
 
-Route::middleware(['auth'])
+
+Route::middleware(['auth', 'verified', 'is_admin'])
     ->prefix('back')
     ->name('back.')
     ->group(function () {
@@ -59,5 +61,19 @@ Route::middleware(['auth'])
 
 
 
+        Route::prefix('notifications')->name('notifications.')->group(function () {
+            Route::get('/create', [NotificationController::class, 'create'])->name('create');
+            Route::post('/', [NotificationController::class, 'store'])->name('store');
+            Route::get('/{notification}/edit', [NotificationController::class, 'edit'])->name('edit');
+            Route::put('/{notification}', [NotificationController::class, 'update'])->name('update');
+            Route::delete('/{notification}', [NotificationController::class, 'destroy'])->name('destroy');
+            Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('markAllRead');
+            Route::post('/{id}/mark-read', [NotificationController::class, 'markAsRead'])->name('markRead');
+        });
 
+        //  // Route API pour fetch les notifications (dans routes/web.php ou api.php)
+    
     });
+
+Route::get('/api/notifications/unread', [NotificationController::class, 'fetchUnread'])->name('api.notifications.unread');
+

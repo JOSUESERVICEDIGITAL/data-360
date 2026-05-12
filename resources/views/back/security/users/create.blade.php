@@ -1,197 +1,167 @@
 @extends('back.layouts.app')
 
-@section('title', 'Ajouter un utilisateur | Data Rocket')
+@section('title', 'Créer un utilisateur | Data Rocket')
 
 @section('content')
-    <style>
-        .form-container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
+<style>
+    .user-form-page{max-width:1080px;margin:0 auto;padding:24px}
+    .user-form-header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:24px}
+    .user-form-header h1{font-size:30px;font-weight:950;color:#0f172a;margin:0}
+    .user-form-header p{color:#64748b;margin-top:7px;line-height:1.6}
+    .user-card{background:white;border:1px solid #e2e8f0;border-radius:26px;padding:30px;box-shadow:0 16px 45px rgba(15,23,42,.07)}
+    .user-section{margin-bottom:30px}
+    .user-section-title{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;color:#0053b3;margin-bottom:18px}
+    .user-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+    .user-group label{display:block;font-size:13px;font-weight:850;color:#334155;margin-bottom:7px}
+    .user-group input,.user-group select{width:100%;border:1.5px solid #dbe3ef;border-radius:14px;padding:13px 14px;font-size:14px;background:white}
+    .user-group input:focus,.user-group select:focus{outline:none;border-color:#0053b3;box-shadow:0 0 0 4px rgba(0,83,179,.10)}
+    .user-help{font-size:12px;color:#64748b;margin-top:6px;line-height:1.5}
+    .user-error{font-size:12px;color:#b91c1c;font-weight:800;margin-top:6px}
+    .user-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+    .user-check{border:1px solid #e2e8f0;background:#f8fafc;border-radius:18px;padding:15px;display:flex;gap:12px;align-items:flex-start;cursor:pointer}
+    .user-check:hover{border-color:#0053b3;background:#f0f7ff}
+    .user-check input{margin-top:3px;width:18px;height:18px}
+    .user-check strong{display:block;color:#0f172a;font-size:14px}
+    .user-check span{display:block;color:#64748b;font-size:12px;margin-top:4px;line-height:1.45}
+    .user-actions{display:flex;justify-content:flex-end;gap:12px;border-top:1px solid #e2e8f0;padding-top:24px}
+    .btn{border:none;border-radius:14px;padding:12px 18px;font-weight:900;text-decoration:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+    .btn-primary{background:#0053b3;color:white}
+    .btn-primary:hover{background:#003d85;color:white}
+    .btn-gray{background:#f1f5f9;color:#334155}
+    .btn-gray:hover{background:#e2e8f0;color:#0f172a}
+    .alert-error{background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:16px;padding:16px;margin-bottom:20px;font-weight:800}
+    .alert-error div+div{margin-top:6px}
+    @media(max-width:760px){.user-grid,.user-checks{grid-template-columns:1fr}.user-form-header{flex-direction:column}.user-actions{flex-direction:column}.btn{width:100%}}
+</style>
 
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-group label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: #1e293b;
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            border: 1.5px solid #e2e8f0;
-            border-radius: 0.75rem;
-            font-size: 0.9rem;
-            transition: all 0.2s ease;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #0053b3;
-            box-shadow: 0 0 0 3px rgba(0, 83, 179, 0.1);
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .checkbox-group input {
-            width: auto;
-        }
-
-        .checkbox-group label {
-            margin-bottom: 0;
-        }
-
-        .form-actions {
-            display: flex;
-            gap: 1rem;
-            margin-top: 2rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid #e2e8f0;
-        }
-
-        .error-message {
-            color: #dc2626;
-            font-size: 0.75rem;
-            margin-top: 0.25rem;
-        }
-
-        .input-error {
-            border-color: #dc2626 !important;
-        }
-
-        .password-hint {
-            font-size: 0.7rem;
-            color: #64748b;
-            margin-top: 0.25rem;
-        }
-    </style>
-
-    <div class="sec-page">
-        <div class="sec-header">
-            <div class="sec-title">
-                <h1>➕ Ajouter un utilisateur</h1>
-                <p>Créez un nouvel utilisateur avec les paramètres souhaités</p>
-            </div>
-
-            <a href="{{ route('admin.security.users.index') }}" class="sec-btn gray">
-                ← Retour à la liste
-            </a>
+<div class="user-form-page">
+    <div class="user-form-header">
+        <div>
+            <h1>Créer un utilisateur</h1>
+            <p>Ajoutez un compte, attribuez ses crédits et configurez les accès administrateur, OTP et vérification email.</p>
         </div>
 
-        @if ($errors->any())
-            <div class="alert-error" style="margin-bottom: 1.5rem;">
-                <ul style="margin-left: 1rem;">
-                    @foreach ($errors->all() as $error)
-                        <li>❌ {{ $error }}</li>
-                    @endforeach
-                </ul>
-            </div>
-        @endif
+        <a href="{{ route('admin.security.users.index') }}" class="btn btn-gray">
+            Retour à la liste
+        </a>
+    </div>
 
-        <div class="sec-card form-container">
-            <form method="POST" action="{{ route('admin.security.users.store') }}">
-                @csrf
+    @if ($errors->any())
+        <div class="alert-error">
+            @foreach ($errors->all() as $error)
+                <div>{{ $error }}</div>
+            @endforeach
+        </div>
+    @endif
 
-                <div class="form-group">
-                    <label>Nom complet *</label>
-                    <input type="text" name="name" value="{{ old('name') }}" required>
-                    @error('name')
-                        <div class="error-message">{{ $message }}</div>
-                    @enderror
-                </div>
+    <div class="user-card">
+        <form method="POST" action="{{ route('admin.security.users.store') }}">
+            @csrf
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Email *</label>
-                        <input type="email" name="email" value="{{ old('email') }}" required>
-                        @error('email')
-                            <div class="error-message">{{ $message }}</div>
-                        @enderror
+            <div class="user-section">
+                <div class="user-section-title">Identité du compte</div>
+
+                <div class="user-grid">
+                    <div class="user-group">
+                        <label>Nom complet</label>
+                        <input type="text" name="name" value="{{ old('name') }}" required placeholder="Nom complet">
+                        @error('name') <div class="user-error">{{ $message }}</div> @enderror
                     </div>
 
-                    <div class="form-group">
+                    <div class="user-group">
+                        <label>Email</label>
+                        <input type="email" name="email" value="{{ old('email') }}" required placeholder="exemple@email.com">
+                        @error('email') <div class="user-error">{{ $message }}</div> @enderror
+                    </div>
+
+                    <div class="user-group">
                         <label>Téléphone</label>
-                        <input type="tel" name="phone" value="{{ old('phone') }}" placeholder="+33 X XX XX XX XX">
-                        @error('phone')
-                            <div class="error-message">{{ $message }}</div>
-                        @enderror
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Mot de passe *</label>
-                        <input type="password" name="password" required>
-                        <div class="password-hint">Minimum 8 caractères, une majuscule, un chiffre, un caractère spécial</div>
-                        @error('password')
-                            <div class="error-message">{{ $message }}</div>
-                        @enderror
+                        <input type="tel" name="phone" value="{{ old('phone') }}" placeholder="+212 6XX XXX XXX">
+                        <div class="user-help">Utilisé pour OTP SMS si le laissez-passer OTP est désactivé.</div>
+                        @error('phone') <div class="user-error">{{ $message }}</div> @enderror
                     </div>
 
-                    <div class="form-group">
-                        <label>Confirmer le mot de passe *</label>
-                        <input type="password" name="password_confirmation" required>
-                        @error('password_confirmation')
-                            <div class="error-message">{{ $message }}</div>
-                        @enderror
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Crédits</label>
-                        <input type="number" name="credits" value="{{ old('credits', 0) }}" min="0">
-                        @error('credits')
-                            <div class="error-message">{{ $message }}</div>
-                        @enderror
-                    </div>
-
-                    <div class="form-group">
+                    <div class="user-group">
                         <label>Plan</label>
                         <select name="plan">
-                            <option value="free" {{ old('plan') === 'free' ? 'selected' : '' }}>Free</option>
+                            <option value="free" {{ old('plan', 'free') === 'free' ? 'selected' : '' }}>Free</option>
                             <option value="premium" {{ old('plan') === 'premium' ? 'selected' : '' }}>Premium</option>
                             <option value="enterprise" {{ old('plan') === 'enterprise' ? 'selected' : '' }}>Enterprise</option>
                         </select>
-                        @error('plan')
-                            <div class="error-message">{{ $message }}</div>
-                        @enderror
+                        @error('plan') <div class="user-error">{{ $message }}</div> @enderror
+                    </div>
+                </div>
+            </div>
+
+            <div class="user-section">
+                <div class="user-section-title">Sécurité du compte</div>
+
+                <div class="user-grid">
+                    <div class="user-group">
+                        <label>Mot de passe</label>
+                        <input type="password" name="password" required placeholder="Minimum 8 caractères">
+                        @error('password') <div class="user-error">{{ $message }}</div> @enderror
+                    </div>
+
+                    <div class="user-group">
+                        <label>Confirmation du mot de passe</label>
+                        <input type="password" name="password_confirmation" required placeholder="Répéter le mot de passe">
+                        @error('password_confirmation') <div class="user-error">{{ $message }}</div> @enderror
+                    </div>
+                </div>
+            </div>
+
+            <div class="user-section">
+                <div class="user-section-title">Accès, crédits et validations</div>
+
+                <div class="user-grid">
+                    <div class="user-group">
+                        <label>Crédits disponibles</label>
+                        <input type="number" name="credits" value="{{ old('credits', 0) }}" min="0">
+                        @error('credits') <div class="user-error">{{ $message }}</div> @enderror
                     </div>
                 </div>
 
-                <div class="form-row">
-                    <div class="checkbox-group">
-                        <input type="checkbox" name="is_active" id="is_active" {{ old('is_active', true) ? 'checked' : '' }}>
-                        <label for="is_active">✓ Compte actif</label>
-                    </div>
+                <div class="user-checks">
+                    <label class="user-check">
+                        <input type="checkbox" name="is_active" value="1" {{ old('is_active', true) ? 'checked' : '' }}>
+                        <div>
+                            <strong>Compte actif</strong>
+                            <span>L’utilisateur pourra se connecter.</span>
+                        </div>
+                    </label>
 
-                    <div class="checkbox-group">
-                        <input type="checkbox" name="is_admin" id="is_admin" {{ old('is_admin') ? 'checked' : '' }}>
-                        <label for="is_admin">👑 Administrateur</label>
-                    </div>
-                </div>
+                    <label class="user-check">
+                        <input type="checkbox" name="is_admin" value="1" {{ old('is_admin') ? 'checked' : '' }}>
+                        <div>
+                            <strong>Administrateur</strong>
+                            <span>Accès au backoffice Data Rocket.</span>
+                        </div>
+                    </label>
 
-                <div class="form-actions">
-                    <button type="submit" class="sec-btn green">💾 Créer l'utilisateur</button>
-                    <a href="{{ route('admin.security.users.index') }}" class="sec-btn gray">Annuler</a>
+                    <label class="user-check">
+                        <input type="checkbox" name="otp_bypass" value="1" {{ old('otp_bypass') ? 'checked' : '' }}>
+                        <div>
+                            <strong>Laissez-passer OTP</strong>
+                            <span>Connexion sans code SMS/OTP.</span>
+                        </div>
+                    </label>
+
+                    <label class="user-check">
+                        <input type="checkbox" name="email_verified" value="1" {{ old('email_verified') ? 'checked' : '' }}>
+                        <div>
+                            <strong>Email vérifié</strong>
+                            <span>Marquer l’adresse email comme confirmée.</span>
+                        </div>
+                    </label>
                 </div>
-            </form>
-        </div>
+            </div>
+
+            <div class="user-actions">
+                <a href="{{ route('admin.security.users.index') }}" class="btn btn-gray">Annuler</a>
+                <button type="submit" class="btn btn-primary">Créer l’utilisateur</button>
+            </div>
+        </form>
     </div>
+</div>
 @endsection

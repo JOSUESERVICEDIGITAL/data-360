@@ -77,4 +77,11 @@ return [
         'base_url' => env('RNB_BASE_URL', 'https://rnb-api.beta.gouv.fr/api/alpha'),
         'from' => env('RNB_FROM'),
     ],
+
+    'stripe' => [
+        'key' => env('STRIPE_KEY'),
+        'secret' => env('STRIPE_SECRET'),
+    ],
+
+    
 ];

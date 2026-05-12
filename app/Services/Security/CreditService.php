@@ -60,26 +60,28 @@ class CreditService
         ];
     }
 
-    public function consumeAfterSearch(?User $user, VisitorDevice $device, array $resultat): void
+    public function consumeAfterSearch(?User $user, VisitorDevice $device, array $resultat): ?int
     {
         if (empty($resultat['success'])) {
-            return;
+            return $user?->credits;
         }
 
         if (!$user) {
             $device->increment('free_searches_used');
-            return;
+            return null;
         }
 
         if ($user->is_admin) {
-            return;
+            return $user->credits;
         }
 
         if ((int) $user->credits <= 0) {
-            return;
+            return $user->credits;
         }
 
-        DB::transaction(function () use ($user) {
+        $newCredits = null;
+
+        DB::transaction(function () use ($user, &$newCredits) {
             $freshUser = User::lockForUpdate()->find($user->id);
 
             if (!$freshUser || $freshUser->credits <= 0) {
@@ -89,6 +91,7 @@ class CreditService
             $before = (int) $freshUser->credits;
             $freshUser->decrement('credits');
             $after = $before - 1;
+            $newCredits = $after;
 
             CreditTransaction::create([
                 'user_id' => $freshUser->id,
@@ -100,8 +103,9 @@ class CreditService
                 'balance_after' => $after,
             ]);
         });
-    }
 
+        return $newCredits;
+    }
     public function addCredits(User $user, int $amount, ?User $admin = null, ?string $reason = null): void
     {
         if ($amount <= 0) {

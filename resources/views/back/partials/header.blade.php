@@ -1,112 +1,181 @@
+@php
+    $authUser = auth()->user();
+    $isAdmin = $authUser && (bool) $authUser->is_admin;
+@endphp
+@php
+    $unreadNotificationsCount = 0;
+    $recentNotifications = collect();
+
+    if (auth()->check()) {
+        $unreadNotificationsCount = App\Models\Back\Notification::forUser(auth()->id())
+            ->notExpired()
+            ->unread()
+            ->count();
+
+        $recentNotifications = App\Models\Back\Notification::forUser(auth()->id())
+            ->notExpired()
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get();
+    }
+@endphp
+
 <header class="admin-header">
     <div class="header-container">
-        <!-- Logo / Brand -->
+
         <div class="header-brand">
-            <a href="{{ route('back.dashboard') }}" class="brand-link">
+            <a href="{{ $isAdmin ? route('back.dashboard') : route('dashboard') }}" class="brand-link">
                 <div class="brand-icon">
                     <i class="fa-solid fa-rocket"></i>
                 </div>
+
                 <div class="brand-text">
                     <strong>Data Rocket</strong>
-                    <span class="brand-badge">Back Office</span>
+                    <span class="brand-badge">
+                        {{ $isAdmin ? 'Back Office' : 'Espace utilisateur' }}
+                    </span>
                 </div>
             </a>
         </div>
 
-        <!-- Mobile Toggle -->
-        <button class="header-mobile-toggle" id="mobileToggle">
+        <button class="header-mobile-toggle" id="mobileToggle" type="button">
             <i class="fa-solid fa-bars"></i>
         </button>
 
-        <!-- Right Side - User Menu -->
         <div class="header-right" id="headerRight">
-            <!-- Quick Actions -->
             <div class="header-actions">
-                <button class="action-btn" onclick="window.location.href='{{ route('admin.security.users.create') }}'" title="Ajouter un utilisateur">
-                    <i class="fa-solid fa-user-plus"></i>
-                </button>
-                <button class="action-btn" onclick="window.location.href='{{ route('back.imports.create') }}'" title="Importer des données">
-                    <i class="fa-solid fa-upload"></i>
-                </button>
-                <button class="action-btn" onclick="window.location.href='{{ route('back.recherches.index') }}'" title="Historique des recherches">
-                    <i class="fa-solid fa-clock-rotate-left"></i>
-                </button>
+                @auth
+                    @php $isAdmin = auth()->user()->is_admin; @endphp
+
+                    @if($isAdmin)
+                        <button class="action-btn" onclick="window.location.href='{{ route('admin.security.users.create') }}'"
+                            title="Ajouter un utilisateur" type="button">
+                            <i class="fa-solid fa-user-plus"></i>
+                        </button>
+
+                        @if(Route::has('back.imports.create'))
+                            <button class="action-btn" onclick="window.location.href='{{ route('back.imports.create') }}'"
+                                title="Importer des données" type="button">
+                                <i class="fa-solid fa-upload"></i>
+                            </button>
+                        @endif
+                    @endif
+                @endauth
             </div>
 
-            <!-- Notifications -->
             <div class="header-notifications">
-                <button class="notif-btn" id="notifBtn">
+                <button class="notif-btn" id="notifBtn" type="button">
                     <i class="fa-regular fa-bell"></i>
-                    <span class="notif-badge">3</span>
+                    @if($unreadNotificationsCount > 0)
+                        <span
+                            class="notif-badge">{{ $unreadNotificationsCount > 9 ? '9+' : $unreadNotificationsCount }}</span>
+                    @endif
                 </button>
+
                 <div class="notif-dropdown" id="notifDropdown">
                     <div class="notif-header">
                         <span>Notifications</span>
-                        <a href="#">Tout marquer comme lu</a>
+                        <a href="#" id="markAllReadBtn">Tout marquer comme lu</a>
                     </div>
-                    <div class="notif-list">
-                        <div class="notif-item unread">
-                            <i class="fa-solid fa-user-plus"></i>
-                            <div>
-                                <p>Nouvel utilisateur inscrit</p>
-                                <small>Il y a 5 minutes</small>
+
+                    <div class="notif-list" id="notifList">
+                        @if($recentNotifications->isEmpty())
+                            <div class="notif-empty">
+                                <i class="fa-regular fa-bell-slash"></i>
+                                <p>Aucune notification</p>
                             </div>
-                        </div>
-                        <div class="notif-item">
-                            <i class="fa-solid fa-credit-card"></i>
-                            <div>
-                                <p>Achat de crédits effectué</p>
-                                <small>Il y a 2 heures</small>
-                            </div>
-                        </div>
-                        <div class="notif-item">
-                            <i class="fa-solid fa-chart-line"></i>
-                            <div>
-                                <p>Nouvelle recherche API</p>
-                                <small>Il y a 1 jour</small>
-                            </div>
-                        </div>
+                        @else
+                            @foreach($recentNotifications as $notif)
+                                @php $typeInfo = \App\Models\Back\Notification::types()[$notif->type] ?? \App\Models\Back\Notification::types()['info']; @endphp
+                                <div class="notif-item {{ !$notif->is_read ? 'unread' : '' }}" data-id="{{ $notif->id }}">
+                                    <i class="{{ $notif->icon ?? $typeInfo['icon'] }}"
+                                        style="color: {{ $typeInfo['color'] }};"></i>
+                                    <div>
+                                        <p>{{ $notif->title }}</p>
+                                        <small>{{ $notif->message }}</small>
+                                        <span class="notif-time">{{ $notif->created_at->diffForHumans() }}</span>
+                                    </div>
+                                    @if($notif->link)
+                                        <a href="{{ $notif->link }}" class="notif-link"></a>
+                                    @endif
+                                </div>
+                            @endforeach
+                        @endif
                     </div>
+
                     <div class="notif-footer">
-                        <a href="#">Voir toutes les notifications</a>
+                        <a href="{{ route('back.notifications.index') }}">
+                            Voir toutes les notifications
+                        </a>
                     </div>
                 </div>
             </div>
-
-            <!-- User Menu -->
             <div class="header-user">
-                <button class="user-btn" id="userBtn">
+                <button class="user-btn" id="userBtn" type="button">
                     <div class="user-avatar">
                         <i class="fa-solid fa-user"></i>
                     </div>
+
                     <div class="user-info">
-                        <span class="user-name">{{ auth()->user()->name ?? 'Utilisateur' }}</span>
-                        <span class="user-role">{{ auth()->user()->is_admin ? 'Administrateur' : 'Utilisateur' }}</span>
+                        <span class="user-name">{{ $authUser->name ?? 'Utilisateur' }}</span>
+                        <span class="user-role">{{ $isAdmin ? 'Administrateur' : 'Utilisateur' }}</span>
                     </div>
+
                     <i class="fa-solid fa-chevron-down user-chevron"></i>
                 </button>
+
                 <div class="user-dropdown" id="userDropdown">
                     <a href="{{ route('profile.edit') }}" class="dropdown-item">
                         <i class="fa-regular fa-user"></i>
                         Mon profil
                     </a>
-                    <a href="#" class="dropdown-item">
-                        <i class="fa-regular fa-credit-card"></i>
-                        Mes crédits
-                        <span class="badge-credits">{{ auth()->user()->credits ?? 0 }}</span>
+
+                    <a href="{{ route('dashboard') }}" class="dropdown-item">
+                        <i class="fa-solid fa-gauge-high"></i>
+                        Mon espace
                     </a>
+
+                    @if(!$isAdmin)
+                        @if(Route::has('front.home'))
+                            <a href="{{ route('front.home') }}" class="dropdown-item">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                Nouvelle recherche
+                            </a>
+                        @endif
+
+                        <a href="{{ route('dashboard') }}" class="dropdown-item">
+                            <i class="fa-regular fa-credit-card"></i>
+                            Mes crédits
+                            <span class="badge-credits">{{ $authUser->credits ?? 0 }}</span>
+                        </a>
+                    @endif
+
+                    @if($isAdmin)
+                        <div class="dropdown-divider"></div>
+
+                        <a href="{{ route('admin.security.users.index') }}" class="dropdown-item">
+                            <i class="fa-solid fa-shield-halved"></i>
+                            Utilisateurs & crédits
+                        </a>
+
+                        <a href="{{ route('admin.security.blocked.index') }}" class="dropdown-item">
+                            <i class="fa-solid fa-ban"></i>
+                            Identités bloquées
+                        </a>
+                    @endif
+
                     <div class="dropdown-divider"></div>
-                    <a href="#" class="dropdown-item">
-                        <i class="fa-solid fa-gear"></i>
-                        Paramètres
-                    </a>
+
                     <a href="#" class="dropdown-item">
                         <i class="fa-regular fa-circle-question"></i>
                         Aide & Support
                     </a>
+
                     <div class="dropdown-divider"></div>
+
                     <form method="POST" action="{{ route('logout') }}" class="logout-form">
                         @csrf
+
                         <button type="submit" class="dropdown-item logout-btn">
                             <i class="fa-solid fa-right-from-bracket"></i>
                             Déconnexion
@@ -114,14 +183,12 @@
                     </form>
                 </div>
             </div>
+
         </div>
     </div>
 </header>
 
 <style>
-    /* ============================================
-       ADMIN HEADER - PROFESSIONAL DESIGN
-    ============================================ */
     .admin-header {
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
         border-bottom: 1px solid #e2e8f0;
@@ -142,7 +209,6 @@
         gap: 1.5rem;
     }
 
-    /* ========== Brand / Logo ========== */
     .header-brand {
         flex-shrink: 0;
     }
@@ -194,14 +260,12 @@
         margin-top: 0.15rem;
     }
 
-    /* ========== Header Right ========== */
     .header-right {
         display: flex;
         align-items: center;
         gap: 1rem;
     }
 
-    /* ========== Quick Actions ========== */
     .header-actions {
         display: flex;
         gap: 0.5rem;
@@ -227,7 +291,6 @@
         transform: translateY(-1px);
     }
 
-    /* ========== Notifications ========== */
     .header-notifications {
         position: relative;
     }
@@ -360,7 +423,6 @@
         font-size: 0.75rem;
     }
 
-    /* ========== User Menu ========== */
     .header-user {
         position: relative;
     }
@@ -425,7 +487,7 @@
         top: 100%;
         right: 0;
         margin-top: 0.5rem;
-        width: 240px;
+        width: 250px;
         background: white;
         border-radius: 12px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
@@ -488,7 +550,6 @@
         font-weight: 600;
     }
 
-    /* ========== Mobile Toggle ========== */
     .header-mobile-toggle {
         display: none;
         width: 40px;
@@ -501,7 +562,6 @@
         font-size: 1.3rem;
     }
 
-    /* ========== Responsive ========== */
     @media (max-width: 768px) {
         .header-container {
             padding: 0 1rem;
@@ -544,21 +604,7 @@
             width: 100%;
         }
 
-        .notif-dropdown {
-            position: static;
-            width: 100%;
-            box-shadow: none;
-            margin-top: 0.5rem;
-            opacity: 1;
-            visibility: visible;
-            transform: none;
-            display: none;
-        }
-
-        .notif-dropdown.active {
-            display: block;
-        }
-
+        .notif-dropdown,
         .user-dropdown {
             position: static;
             width: 100%;
@@ -570,56 +616,76 @@
             display: none;
         }
 
+        .notif-dropdown.active,
         .user-dropdown.active {
             display: block;
         }
 
         .user-btn {
             justify-content: space-between;
+            width: 100%;
         }
     }
 </style>
 
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Mobile menu toggle
+    document.addEventListener('DOMContentLoaded', function () {
         const mobileToggle = document.getElementById('mobileToggle');
         const headerRight = document.getElementById('headerRight');
+        const userBtn = document.getElementById('userBtn');
+        const userDropdown = document.getElementById('userDropdown');
+        const notifBtn = document.getElementById('notifBtn');
+        const notifDropdown = document.getElementById('notifDropdown');
 
-        if (mobileToggle) {
-            mobileToggle.addEventListener('click', function() {
+        if (mobileToggle && headerRight) {
+            mobileToggle.addEventListener('click', function (e) {
+                e.stopPropagation();
                 headerRight.classList.toggle('active');
             });
         }
 
-        // User dropdown
-        const userBtn = document.getElementById('userBtn');
-        const userDropdown = document.getElementById('userDropdown');
-
-        if (userBtn) {
-            userBtn.addEventListener('click', function(e) {
+        if (userBtn && userDropdown) {
+            userBtn.addEventListener('click', function (e) {
                 e.stopPropagation();
                 userDropdown.classList.toggle('active');
                 userBtn.classList.toggle('active');
+
+                if (notifDropdown) {
+                    notifDropdown.classList.remove('active');
+                }
             });
         }
 
-        // Notifications dropdown
-        const notifBtn = document.getElementById('notifBtn');
-        const notifDropdown = document.getElementById('notifDropdown');
-
-        if (notifBtn) {
-            notifBtn.addEventListener('click', function(e) {
+        if (notifBtn && notifDropdown) {
+            notifBtn.addEventListener('click', function (e) {
                 e.stopPropagation();
                 notifDropdown.classList.toggle('active');
+
+                if (userDropdown) {
+                    userDropdown.classList.remove('active');
+                }
+
+                if (userBtn) {
+                    userBtn.classList.remove('active');
+                }
             });
         }
 
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', function() {
-            if (userDropdown) userDropdown.classList.remove('active');
-            if (userBtn) userBtn.classList.remove('active');
-            if (notifDropdown) notifDropdown.classList.remove('active');
+        document.addEventListener('click', function () {
+            if (userDropdown) {
+                userDropdown.classList.remove('active');
+            }
+
+            if (userBtn) {
+                userBtn.classList.remove('active');
+            }
+
+            if (notifDropdown) {
+                notifDropdown.classList.remove('active');
+            }
         });
     });
+
+
+
 </script>

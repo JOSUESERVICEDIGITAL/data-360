@@ -180,4 +180,87 @@ body {
     gap: 8px;
     margin-top: 16px;
 }
+
+
+
+
+
+
+
+
+/* Sidebar Dropdown */
+.sidebar-dropdown {
+    position: relative;
+}
+
+.sidebar-dropdown-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.sidebar-dropdown-toggle .dropdown-arrow {
+    transition: transform 0.2s ease;
+    font-size: 0.7rem;
+}
+
+.sidebar-dropdown.active .sidebar-dropdown-toggle .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.sidebar-dropdown-menu {
+    list-style: none;
+    padding-left: 2rem;
+    margin: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.sidebar-dropdown.active .sidebar-dropdown-menu {
+    max-height: 300px;
+}
+
+.sidebar-dropdown-menu li {
+    margin: 0.25rem 0;
+}
+
+.sidebar-dropdown-menu a {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    color: #64748b;
+    text-decoration: none;
+    font-size: 0.85rem;
+    border-radius: 0.5rem;
+    transition: all 0.2s;
+}
+
+.sidebar-dropdown-menu a:hover {
+    background: #f1f5f9;
+    color: #0053b3;
+}
+
+.sidebar-dropdown-menu a i {
+    width: 1.2rem;
+    font-size: 0.85rem;
+}
+
+.sidebar-divider {
+    margin: 0.5rem 0;
+    border: none;
+    border-top: 1px solid #e2e8f0;
+}
+
+.badge-notif {
+    background: #ef4444;
+    color: white;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
+    border-radius: 20px;
+    margin-left: auto;
+}
 </style>

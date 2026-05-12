@@ -3,170 +3,220 @@
 namespace App\Http\Controllers\Back;
 
 use App\Http\Controllers\Controller;
+use App\Models\Back\BlockedIdentity;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
-    /**
-     * Affiche la liste des utilisateurs
-     */
     public function index(Request $request)
     {
         $query = User::query();
 
-        // Recherche
         if ($request->filled('q')) {
-            $search = $request->q;
+            $search = trim($request->q);
+
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%");
             });
         }
 
-        // Tri et pagination
-        $users = $query->orderBy('id', 'desc')->paginate(20);
+        $users = $query->orderByDesc('id')->paginate(20)->withQueryString();
 
         return view('back.security.users.index', compact('users'));
     }
 
-    /**
-     * Affiche le formulaire de création
-     */
     public function create()
     {
         return view('back.security.users.create');
     }
 
-    /**
-     * Enregistre un nouvel utilisateur
-     */
     public function store(Request $request)
     {
-        $request->validate([
+        $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'phone' => ['nullable', 'string', 'max:30', 'unique:users'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
+            'phone' => ['nullable', 'string', 'max:30', 'unique:users,phone'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
+
             'is_admin' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'],
+            'otp_bypass' => ['nullable', 'boolean'],
+            'email_verified' => ['nullable', 'boolean'],
+
             'credits' => ['nullable', 'integer', 'min:0'],
-            'plan' => ['nullable', 'string', 'in:free,premium,enterprise'],
+            'plan' => ['nullable', Rule::in(['free', 'premium', 'enterprise'])],
         ]);
 
         $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'password' => bcrypt($request->password),
-            'is_admin' => $request->has('is_admin'),
-            'is_active' => $request->has('is_active'),
-            'credits' => $request->credits ?? 0,
-            'plan' => $request->plan ?? 'free',
+            'name' => $data['name'],
+            'email' => strtolower($data['email']),
+            'phone' => $data['phone'] ?? null,
+            'password' => Hash::make($data['password']),
+
+            'is_admin' => $request->boolean('is_admin'),
+            'is_active' => $request->boolean('is_active'),
+            'otp_bypass' => $request->boolean('otp_bypass'),
+            'email_verified_at' => $request->boolean('email_verified') ? now() : null,
+
+            'credits' => $data['credits'] ?? 0,
+            'plan' => $data['plan'] ?? 'free',
         ]);
 
-        return redirect()->route('back.security.users.index')
+        return redirect()
+            ->route('admin.security.users.index')
             ->with('success', "Utilisateur {$user->name} créé avec succès.");
     }
 
-    /**
-     * Affiche le formulaire d'édition
-     */
     public function edit(User $user)
     {
         return view('back.security.users.edit', compact('user'));
     }
 
-    /**
-     * Met à jour un utilisateur
-     */
     public function update(Request $request, User $user)
     {
-        $request->validate([
+        $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,' . $user->id],
-            'phone' => ['nullable', 'string', 'max:30', 'unique:users,phone,' . $user->id],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'phone' => ['nullable', 'string', 'max:30', Rule::unique('users', 'phone')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+
             'is_admin' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'],
+            'otp_bypass' => ['nullable', 'boolean'],
+            'email_verified' => ['nullable', 'boolean'],
+
             'credits' => ['nullable', 'integer', 'min:0'],
-            'plan' => ['nullable', 'string', 'in:free,premium,enterprise'],
+            'plan' => ['nullable', Rule::in(['free', 'premium', 'enterprise'])],
         ]);
 
-        $user->update([
-            'name' => $request->name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'is_admin' => $request->has('is_admin'),
-            'is_active' => $request->has('is_active'),
-            'credits' => $request->credits ?? $user->credits,
-            'plan' => $request->plan ?? $user->plan,
-        ]);
+        $payload = [
+            'name' => $data['name'],
+            'email' => strtolower($data['email']),
+            'phone' => $data['phone'] ?? null,
 
-        if ($request->filled('password')) {
-            $user->update(['password' => bcrypt($request->password)]);
+            'is_admin' => $request->boolean('is_admin'),
+            'is_active' => $request->boolean('is_active'),
+            'otp_bypass' => $request->boolean('otp_bypass'),
+
+            'credits' => $data['credits'] ?? 0,
+            'plan' => $data['plan'] ?? 'free',
+        ];
+
+        if ($request->boolean('email_verified')) {
+            $payload['email_verified_at'] = $user->email_verified_at ?? now();
+        } else {
+            $payload['email_verified_at'] = null;
         }
 
-        return redirect()->route('back.security.users.index')
+        if (!empty($data['password'])) {
+            $payload['password'] = Hash::make($data['password']);
+        }
+
+        $user->update($payload);
+
+        return redirect()
+            ->route('admin.security.users.index')
             ->with('success', "Utilisateur {$user->name} mis à jour avec succès.");
     }
 
-    // ============================================
-    // MÉTHODES SUPPLÉMENTAIRES POUR LES ACTIONS
-    // ============================================
-
     public function giveCredits(Request $request)
     {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'amount' => 'required|integer|min:1',
+        $data = $request->validate([
+            'user_id' => ['required', 'exists:users,id'],
+            'amount' => ['required', 'integer', 'min:1'],
         ]);
 
-        $user = User::findOrFail($request->user_id);
-        $user->increment('credits', $request->amount);
+        $user = User::findOrFail($data['user_id']);
+        $user->increment('credits', $data['amount']);
 
-        return redirect()->back()->with('success', "{$request->amount} crédits ajoutés à {$user->name}");
+        return back()->with('success', "{$data['amount']} crédits ajoutés à {$user->name}.");
     }
 
     public function removeCredits(Request $request)
     {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'amount' => 'required|integer|min:1',
+        $data = $request->validate([
+            'user_id' => ['required', 'exists:users,id'],
+            'amount' => ['required', 'integer', 'min:1'],
         ]);
 
-        $user = User::findOrFail($request->user_id);
-        $user->decrement('credits', $request->amount);
+        $user = User::findOrFail($data['user_id']);
 
-        return redirect()->back()->with('success', "{$request->amount} crédits retirés à {$user->name}");
+        $newCredits = max(0, ((int) $user->credits) - (int) $data['amount']);
+
+        $user->update([
+            'credits' => $newCredits,
+        ]);
+
+        return back()->with('success', "{$data['amount']} crédits retirés à {$user->name}.");
     }
 
     public function toggleActive(User $user)
     {
-        $user->update(['is_active' => !$user->is_active]);
-        $status = $user->is_active ? 'réactivé' : 'suspendu';
+        $user->update([
+            'is_active' => !$user->is_active,
+        ]);
 
-        return redirect()->back()->with('success', "Utilisateur {$user->name} {$status}.");
+        return back()->with(
+            'success',
+            $user->is_active
+                ? "Utilisateur {$user->name} réactivé."
+                : "Utilisateur {$user->name} suspendu."
+        );
     }
 
     public function makeAdmin(User $user)
     {
-        $user->update(['is_admin' => true]);
-        return redirect()->back()->with('success', "{$user->name} est maintenant administrateur.");
+        $user->update([
+            'is_admin' => true,
+        ]);
+
+        return back()->with('success', "{$user->name} est maintenant administrateur.");
     }
 
     public function removeAdmin(User $user)
     {
-        $user->update(['is_admin' => false]);
-        return redirect()->back()->with('success', "{$user->name} n'est plus administrateur.");
+        $user->update([
+            'is_admin' => false,
+        ]);
+
+        return back()->with('success', "{$user->name} n’est plus administrateur.");
+    }
+
+    public function verifyEmail(User $user)
+    {
+        $user->update([
+            'email_verified_at' => now(),
+        ]);
+
+        return back()->with('success', "Email de {$user->name} vérifié.");
+    }
+
+    public function toggleOtpBypass(User $user)
+    {
+        $user->update([
+            'otp_bypass' => !$user->otp_bypass,
+        ]);
+
+        return back()->with(
+            'success',
+            $user->otp_bypass
+                ? "Laissez-passer OTP activé pour {$user->name}."
+                : "Laissez-passer OTP désactivé pour {$user->name}."
+        );
     }
 
     public function ban(User $user)
     {
-        // Bloquer l'utilisateur
-        \App\Models\Back\BlockedIdentity::updateOrCreate(
-            ['type' => 'user', 'value' => $user->id],
+        BlockedIdentity::updateOrCreate(
+            [
+                'type' => 'user',
+                'value' => (string) $user->id,
+            ],
             [
                 'user_id' => auth()->id(),
                 'reason' => 'Banni depuis le backoffice',
@@ -175,22 +225,19 @@ class UserController extends Controller
             ]
         );
 
-        $user->update(['is_active' => false]);
+        $user->update([
+            'is_active' => false,
+        ]);
 
-        return redirect()->back()->with('success', "Utilisateur {$user->name} banni avec succès.");
+        return back()->with('success', "Utilisateur {$user->name} banni avec succès.");
     }
 
-    public function verifyEmail(User $user)
+    public function destroy(User $user)
     {
-        $user->update(['email_verified_at' => now()]);
-        return redirect()->back()->with('success', "Email de {$user->name} vérifié.");
-    }
+        $user->delete();
 
-    public function toggleOtpBypass(User $user)
-    {
-        $user->update(['otp_bypass' => !$user->otp_bypass]);
-        $status = $user->otp_bypass ? 'activé' : 'désactivé';
-
-        return redirect()->back()->with('success', "Laissez-passer OTP {$status} pour {$user->name}.");
+        return redirect()
+            ->route('admin.security.users.index')
+            ->with('success', "Utilisateur supprimé avec succès.");
     }
 }
