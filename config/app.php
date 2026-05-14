@@ -52,7 +52,15 @@ return [
     |
     */
 
-    'url' => env('APP_URL', 'http://localhost'),
+    'url' => (function () {
+        $url = env('APP_URL', 'http://localhost');
+        // Guard against malformed URLs (e.g. "htpps://...") that would cause
+        // "Invalid URI: Scheme is malformed" during config:cache at build time.
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return 'http://localhost';
+        }
+        return $url;
+    })(),
 
     /*
     |--------------------------------------------------------------------------
