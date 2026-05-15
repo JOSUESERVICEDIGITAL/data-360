@@ -69,7 +69,7 @@ class InpiRneImportService
 
             // TEST : garde ça pour importer seulement le premier fichier JSON.
             // Quand ça fonctionne, commente cette ligne.
-            break;
+            // break;
         }
 
         $zip->close();
