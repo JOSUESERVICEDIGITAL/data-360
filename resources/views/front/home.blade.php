@@ -58,7 +58,7 @@
         justify-content: center;
         max-width: 700px;
         margin: 0 auto;
-        align-items: flex-start; /* Changé de center à flex-start */
+        align-items: flex-start;
     }
 
     .search-box {
@@ -79,7 +79,7 @@
 
     .search-box input {
         width: 100%;
-        height: 52px; /* Hauteur fixe */
+        height: 52px;
         padding: 0 1rem 0 2.8rem;
         font-size: 1rem;
         border: 2px solid #e2e8f0;
@@ -99,7 +99,7 @@
         background: #0053b3;
         color: white;
         border: none;
-        height: 52px; /* Même hauteur que l'input */
+        height: 52px;
         padding: 0 1.8rem;
         border-radius: 48px;
         font-weight: 500;
@@ -117,6 +117,27 @@
         background: #003d85;
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0, 83, 179, 0.3);
+    }
+
+    /* Loader spinner */
+    .btn-primary .spinner {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .btn-primary:disabled {
+        opacity: 0.8;
+        cursor: not-allowed;
+        transform: none;
     }
 
     /* Section Générale */
@@ -195,7 +216,7 @@
             syndics, SIREN, niveaux, logements et années de construction.
         </p>
 
-        <form method="GET" action="{{ route('front.recherche') }}" class="search-form">
+        <form method="GET" action="{{ route('front.recherche') }}" class="search-form" id="searchForm">
             <div class="search-box">
                 <i class="fa-solid fa-magnifying-glass"></i>
                 <input
@@ -205,12 +226,13 @@
                     placeholder="Saisir une adresse..."
                     required
                     autocomplete="off"
+                    id="searchInput"
                 >
             </div>
 
-            <button type="submit" class="btn-primary">
+            <button type="submit" class="btn-primary" id="searchBtn">
                 <i class="fa-solid fa-arrow-right" style="margin-right: 0.5rem;"></i>
-                Tester une adresse
+                <span class="btn-text">Tester une adresse</span>
             </button>
         </form>
     </div>
@@ -225,5 +247,33 @@
         </p>
     </div>
 </section>
+
+<script>
+    (function() {
+        const form = document.getElementById('searchForm');
+        const submitBtn = document.getElementById('searchBtn');
+        const btnTextSpan = submitBtn.querySelector('.btn-text');
+        const originalText = btnTextSpan.textContent;
+        const arrowIcon = submitBtn.querySelector('.fa-arrow-right');
+
+        form.addEventListener('submit', function(e) {
+            // Désactiver le bouton pour éviter les doubles soumissions
+            if (submitBtn.disabled) {
+                e.preventDefault();
+                return;
+            }
+
+            // Remplacer le contenu du bouton par un loader
+            submitBtn.disabled = true;
+            // Supprimer l'icône flèche si elle existe, ou la remplacer
+            if (arrowIcon) arrowIcon.style.display = 'none';
+            // Ajouter le spinner
+            const spinner = document.createElement('span');
+            spinner.className = 'spinner';
+            submitBtn.insertBefore(spinner, btnTextSpan);
+            btnTextSpan.textContent = 'Recherche en cours...';
+        });
+    })();
+</script>
 
 @endsection
