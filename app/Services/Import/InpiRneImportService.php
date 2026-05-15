@@ -4,7 +4,6 @@ namespace App\Services\Import;
 
 use App\Models\Back\RneEntreprise;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use ZipArchive;
 
 class InpiRneImportService
@@ -25,7 +24,7 @@ class InpiRneImportService
             return $this->importJsonLikeFile($path);
         }
 
-        Log::warning('Format INPI non encore géré', [
+        Log::warning('Format INPI non géré', [
             'path' => $path,
             'extension' => $extension,
         ]);
@@ -92,8 +91,8 @@ class InpiRneImportService
             $decoded = json_decode($line, true);
 
             if (is_array($decoded)) {
-                $this->upsertEntreprise($decoded);
-                $imported++;
+                $handled = $this->handleDecodedJson($decoded);
+                $imported += $handled;
                 continue;
             }
 
@@ -105,26 +104,51 @@ class InpiRneImportService
         if ($buffer) {
             $json = json_decode($buffer, true);
 
-            if (isset($json[0]) && is_array($json[0])) {
-                foreach ($json as $item) {
-                    $this->upsertEntreprise($item);
-                    $imported++;
-                }
-            } elseif (is_array($json)) {
-                $this->upsertEntreprise($json);
-                $imported++;
+            if (is_array($json)) {
+                $imported += $this->handleDecodedJson($json);
             }
         }
 
         return $imported;
     }
 
-    private function upsertEntreprise(array $item): void
+    private function handleDecodedJson(array $json): int
+    {
+        $count = 0;
+
+        if (isset($json[0]) && is_array($json[0])) {
+            foreach ($json as $item) {
+                if ($this->upsertEntreprise($item)) {
+                    $count++;
+                }
+            }
+
+            return $count;
+        }
+
+        if (isset($json['data']) && is_array($json['data'])) {
+            foreach ($json['data'] as $item) {
+                if (is_array($item) && $this->upsertEntreprise($item)) {
+                    $count++;
+                }
+            }
+
+            return $count;
+        }
+
+        if ($this->upsertEntreprise($json)) {
+            $count++;
+        }
+
+        return $count;
+    }
+
+    private function upsertEntreprise(array $item): bool
     {
         $siren = $this->extractSiren($item);
 
         if (!$siren || strlen($siren) !== 9) {
-            return;
+            return false;
         }
 
         $capital = $this->extractCapital($item);
@@ -143,19 +167,24 @@ class InpiRneImportService
                 'code_postal' => $this->extractCodePostal($item),
                 'ville' => $this->extractVille($item),
                 'dirigeants' => $this->extractDirigeants($item),
-                'etablissements' => $item['formality']['content']['personneMorale']['etablissementPrincipal'] ?? null,
+                'etablissements' => $this->extractEtablissements($item),
                 'raw_data' => $item,
             ]
         );
+
+        return true;
     }
 
     private function extractSiren(array $item): ?string
     {
         $value =
-            $item['siren']
-            ?? $item['formality']['siren']
-            ?? $item['formality']['content']['siren']
-            ?? $item['formality']['content']['personneMorale']['siren']
+            data_get($item, 'siren')
+            ?? data_get($item, 'formality.siren')
+            ?? data_get($item, 'formality.content.siren')
+            ?? data_get($item, 'formality.content.personneMorale.siren')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.siren')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.siren')
+            ?? data_get($item, 'personneMorale.siren')
             ?? null;
 
         $value = preg_replace('/\D/', '', (string) $value);
@@ -166,9 +195,11 @@ class InpiRneImportService
     private function extractSiretSiege(array $item): ?string
     {
         $value =
-            $item['siret']
-            ?? $item['siretSiege']
-            ?? $item['formality']['content']['personneMorale']['etablissementPrincipal']['descriptionEtablissement']['siret']
+            data_get($item, 'siret')
+            ?? data_get($item, 'siretSiege')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.descriptionEtablissement.siret')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.siret')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.siretSiege')
             ?? null;
 
         $value = preg_replace('/\D/', '', (string) $value);
@@ -179,34 +210,54 @@ class InpiRneImportService
     private function extractDenomination(array $item): ?string
     {
         return
-            $item['denomination']
-            ?? $item['denominationSociale']
-            ?? $item['formality']['content']['personneMorale']['identite']['entreprise']['denomination']
-            ?? $item['formality']['content']['personneMorale']['identite']['entreprise']['denominationSociale']
+            data_get($item, 'denomination')
+            ?? data_get($item, 'denominationSociale')
+            ?? data_get($item, 'nomCommercial')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.denomination')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.denominationSociale')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.denomination')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.denominationSociale')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.nom')
             ?? null;
     }
 
     private function extractFormeJuridique(array $item): ?string
     {
         return
-            $item['formeJuridique']
-            ?? $item['forme_juridique']
-            ?? $item['formality']['content']['personneMorale']['identite']['entreprise']['formeJuridique']
+            data_get($item, 'formeJuridique')
+            ?? data_get($item, 'forme_juridique')
+            ?? data_get($item, 'formeJuridiqueCode')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.formeJuridique')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.formeJuridique')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.formeJuridiqueCode')
             ?? null;
     }
 
     private function extractCapital(array $item): ?string
     {
         $capital =
-            $item['capitalSocial']
-            ?? $item['capital_social']
-            ?? $item['formality']['content']['personneMorale']['identite']['entreprise']['capitalSocial']
-            ?? $item['formality']['content']['personneMorale']['identite']['description']['montantCapital']
+            data_get($item, 'capitalSocial')
+            ?? data_get($item, 'capital_social')
+            ?? data_get($item, 'montantCapital')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.capitalSocial')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.montantCapital')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.capitalSocial')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.montantCapital')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.montantCapitalSocial')
             ?? null;
 
         if (is_array($capital)) {
-            $montant = $capital['montant'] ?? $capital['valeur'] ?? $capital['capital'] ?? null;
-            $devise = $capital['devise'] ?? 'EUR';
+            $montant =
+                $capital['montant']
+                ?? $capital['valeur']
+                ?? $capital['capital']
+                ?? $capital['value']
+                ?? null;
+
+            $devise =
+                $capital['devise']
+                ?? $capital['currency']
+                ?? 'EUR';
 
             return $montant ? trim($montant . ' ' . $devise) : null;
         }
@@ -220,9 +271,17 @@ class InpiRneImportService
             return null;
         }
 
-        $value = str_replace(['€', 'EUR', ' '], '', $capital);
+        $value = strtoupper($capital);
+        $value = str_replace(['€', 'EUR', 'EUROS'], '', $value);
+        $value = str_replace(["\xc2\xa0", ' '], '', $value);
         $value = str_replace(',', '.', $value);
         $value = preg_replace('/[^0-9.]/', '', $value);
+
+        if (substr_count($value, '.') > 1) {
+            $parts = explode('.', $value);
+            $last = array_pop($parts);
+            $value = implode('', $parts) . '.' . $last;
+        }
 
         return is_numeric($value) ? (float) $value : null;
     }
@@ -230,27 +289,35 @@ class InpiRneImportService
     private function extractActivite(array $item): ?string
     {
         return
-            $item['activite']
-            ?? $item['codeApe']
-            ?? $item['formality']['content']['personneMorale']['etablissementPrincipal']['descriptionEtablissement']['activites'][0]['codeApe']
+            data_get($item, 'activite')
+            ?? data_get($item, 'codeApe')
+            ?? data_get($item, 'activitePrincipale')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.descriptionEtablissement.activites.0.codeApe')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.activites.0.codeApe')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.activitePrincipale')
             ?? null;
     }
 
     private function extractDateCreation(array $item): ?string
     {
         return
-            $item['dateCreation']
-            ?? $item['date_creation']
-            ?? $item['formality']['content']['personneMorale']['identite']['entreprise']['dateCreation']
+            data_get($item, 'dateCreation')
+            ?? data_get($item, 'date_creation')
+            ?? data_get($item, 'formality.content.personneMorale.identite.entreprise.dateCreation')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.dateCreation')
+            ?? data_get($item, 'formality.content.personneMorale.identite.description.dateImmatriculation')
             ?? null;
     }
 
     private function extractAdresse(array $item): ?string
     {
         $adresse =
-            $item['adresse']
-            ?? $item['adresse_complete']
-            ?? $item['formality']['content']['personneMorale']['etablissementPrincipal']['adresse']
+            data_get($item, 'adresse')
+            ?? data_get($item, 'adresse_complete')
+            ?? data_get($item, 'adresseComplete')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.adresse')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.adresseEtablissement')
+            ?? data_get($item, 'formality.content.personneMorale.adresseEntreprise')
             ?? null;
 
         if (is_string($adresse)) {
@@ -260,10 +327,13 @@ class InpiRneImportService
         if (is_array($adresse)) {
             return trim(collect([
                 $adresse['numVoie'] ?? null,
+                $adresse['numeroVoie'] ?? null,
                 $adresse['typeVoie'] ?? null,
                 $adresse['voie'] ?? null,
+                $adresse['libelleVoie'] ?? null,
                 $adresse['codePostal'] ?? null,
                 $adresse['commune'] ?? null,
+                $adresse['ville'] ?? null,
             ])->filter()->implode(' '));
         }
 
@@ -273,27 +343,48 @@ class InpiRneImportService
     private function extractCodePostal(array $item): ?string
     {
         return
-            $item['codePostal']
-            ?? $item['code_postal']
-            ?? $item['formality']['content']['personneMorale']['etablissementPrincipal']['adresse']['codePostal']
+            data_get($item, 'codePostal')
+            ?? data_get($item, 'code_postal')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.adresse.codePostal')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.adresseEtablissement.codePostal')
+            ?? data_get($item, 'formality.content.personneMorale.adresseEntreprise.codePostal')
             ?? null;
     }
 
     private function extractVille(array $item): ?string
     {
         return
-            $item['ville']
-            ?? $item['commune']
-            ?? $item['formality']['content']['personneMorale']['etablissementPrincipal']['adresse']['commune']
+            data_get($item, 'ville')
+            ?? data_get($item, 'commune')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.adresse.commune')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal.adresseEtablissement.commune')
+            ?? data_get($item, 'formality.content.personneMorale.adresseEntreprise.commune')
             ?? null;
     }
 
     private function extractDirigeants(array $item): ?array
     {
         return
-            $item['dirigeants']
-            ?? $item['representants']
-            ?? $item['formality']['content']['personneMorale']['composition']['pouvoirs']
+            data_get($item, 'dirigeants')
+            ?? data_get($item, 'representants')
+            ?? data_get($item, 'formality.content.personneMorale.composition.pouvoirs')
+            ?? data_get($item, 'formality.content.personneMorale.composition.representants')
             ?? null;
+    }
+
+    private function extractEtablissements(array $item): ?array
+    {
+        $value =
+            data_get($item, 'etablissements')
+            ?? data_get($item, 'formality.content.etablissements')
+            ?? data_get($item, 'formality.content.personneMorale.etablissements')
+            ?? data_get($item, 'formality.content.personneMorale.etablissementPrincipal')
+            ?? null;
+
+        if (!$value) {
+            return null;
+        }
+
+        return is_array($value) ? $value : null;
     }
 }

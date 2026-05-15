@@ -88,14 +88,23 @@
                     // Extraire les adresses
                     if (isset($data['addresses']) && is_array($data['addresses'])) {
                         foreach ($data['addresses'] as $addr) {
-                            $label = $addr['label'] ?? $addr['adresse'] ?? null;
-                            if ($label) {
-                                $addresses->push([
-                                    'adresse' => $label,
-                                    'cle_ban' => $addr['cle_interop_ban'] ?? $addr['cle_ban'] ?? null,
-                                    'id_ban' => $addr['ban_id'] ?? $addr['id_ban'] ?? null,
-                                ]);
-                            }
+                           $label = $addr['label']
+    ?? $addr['adresse']
+    ?? trim(collect([
+        $addr['street_number'] ?? null,
+        $addr['street_rep'] ?? null,
+        $addr['street'] ?? null,
+        $addr['city_zipcode'] ?? null,
+        $addr['city_name'] ?? null,
+    ])->filter()->implode(' '));
+
+if ($label) {
+    $addresses->push([
+        'adresse' => $label,
+        'cle_ban' => $addr['cle_interop_ban'] ?? $addr['cle_ban'] ?? $addr['id'] ?? null,
+        'id_ban' => $addr['ban_id'] ?? $addr['id_ban'] ?? null,
+    ]);
+}
                         }
                     }
 
@@ -1352,7 +1361,7 @@
                             <div class="dr-panel-icon"><i class="fa-solid fa-landmark"></i></div>
                             <div>
                                 <h2>Syndics & entreprises associées</h2>
-                                <p>Informations SIRENE / Pappers des syndics</p>
+                                <p>Informations SIRENE / INPI RNE des syndics</p>
                             </div>
                         </div>
                     </div>
@@ -1401,8 +1410,8 @@
                                         <div class="dr-field-value">{{ dr_value($syndic, ['dirigeant_principal']) }}</div>
                                     </div>
                                 </div>
-                                @if (dr_value($syndic, ['pappers_link'], null))
-                                    <div style="margin-top: 16px;"><a href="{{ dr_value($syndic, ['pappers_link']) }}" target="_blank"
+                                @if (dr_value($syndic, ['url_pappers'], null))
+                                    <div style="margin-top: 16px;"><a href="{{ dr_value($syndic, ['url_pappers']) }}" target="_blank"
                                             class="dr-btn dr-btn-primary"><i class="fa-solid fa-arrow-up-right-from-square"></i> Voir la
                                             fiche externe</a></div>
                                 @endif

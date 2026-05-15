@@ -8,6 +8,7 @@ use App\Models\Back\Copropriete;
 use App\Models\Back\Recherche;
 use App\Models\Back\Syndic;
 use Illuminate\Support\Facades\Auth;
+use App\Models\Back\RneEntreprise;
 
 class DataRocketEngineService
 {
@@ -20,8 +21,7 @@ class DataRocketEngineService
         protected PappersApiService $pappersApi,
         protected QpvEligibilityService $qpvEligibilityService,
         protected RnbApiService $rnbApi,
-    ) {
-    }
+    ) {}
 
     public function searchByAddress(string $query): array
     {
@@ -128,8 +128,7 @@ class DataRocketEngineService
         }
 
         $proprietairesBdnb = $this->extractProprietairesFromBatiments($batiments);
-        $proprietairesBdnb = $this->enrichProprietairesWithPappers($proprietairesBdnb);
-
+        $proprietairesBdnb = $this->enrichProprietairesWithRne($proprietairesBdnb);
         $coprosApi = $this->coproprieteApi->searchByAddress(
             $query,
             $geo['code_postal'] ?? null,
@@ -228,7 +227,7 @@ class DataRocketEngineService
 
         $syndics = collect($syndics)
             ->filter()
-            ->unique(fn ($syndic) => $syndic->siret ?: $syndic->siren ?: $syndic->nom)
+            ->unique(fn($syndic) => $syndic->siret ?: $syndic->siren ?: $syndic->nom)
             ->values()
             ->all();
 
@@ -280,8 +279,9 @@ class DataRocketEngineService
     {
         $sirene = $sirenSyndic ? $this->sireneApi->searchBySiren($sirenSyndic) : null;
         $etablissements = $sirenSyndic ? $this->sireneApi->searchEtablissementsBySiren($sirenSyndic) : [];
-        $pappers = $sirenSyndic ? $this->pappersApi->searchBySiren($sirenSyndic) : null;
-
+        $rne = $sirenSyndic
+            ? RneEntreprise::where('siren', $sirenSyndic)->first()
+            : null;
         $uniqueKey = $sirenSyndic ?: ($siretSyndic ? substr($siretSyndic, 0, 9) : null);
 
         if (!$uniqueKey && $syndicNom) {
@@ -291,45 +291,54 @@ class DataRocketEngineService
         return Syndic::updateOrCreate(
             ['siren' => $uniqueKey],
             [
-                'nom' => $pappers['nom']
+                'nom' => $rne?->denomination
                     ?? $sirene['nom']
                     ?? $syndicNom
                     ?? null,
 
-                'siret' => $pappers['siret']
+                'siret' => $rne?->siret_siege
                     ?? $siretSyndic
                     ?? ($etablissements[0]['siret'] ?? null),
 
-                'forme_juridique' => $pappers['forme_juridique']
+                'forme_juridique' => $rne?->forme_juridique
                     ?? $sirene['forme_juridique']
                     ?? null,
 
-                'activite' => $pappers['activite']
+                'activite' => $rne?->activite
                     ?? $sirene['activite']
                     ?? null,
 
-                'capital_social' => $pappers['capital_social'] ?? null,
-                'chiffre_affaires' => $pappers['chiffre_affaires'] ?? null,
-                'resultat' => $pappers['resultat'] ?? null,
-                'effectif' => $pappers['effectif'] ?? null,
-                'date_creation' => $pappers['date_creation'] ?? null,
-                'dirigeant_principal' => $pappers['dirigeant_principal'] ?? null,
-                'url_pappers' => $pappers['url_pappers'] ?? null,
+                'capital_social' => $rne?->capital_formatted
+                    ?? $rne?->capital_social
+                    ?? null,
 
-                'adresse_complete' => $pappers['adresse_complete']
+                'chiffre_affaires' => null,
+                'resultat' => null,
+                'effectif' => null,
+
+                'date_creation' => $rne?->date_creation
+                    ?? null,
+
+                'dirigeant_principal' => data_get($rne?->dirigeants, '0.nom')
+                    ?? data_get($rne?->dirigeants, '0.prenoms')
+                    ?? null,
+
+                'url_pappers' => null,
+
+                'adresse_complete' => $rne?->adresse_complete
                     ?? ($etablissements[0]['adresse_complete'] ?? null),
 
-                'code_postal' => $pappers['code_postal']
+                'code_postal' => $rne?->code_postal
                     ?? ($etablissements[0]['code_postal'] ?? null),
 
-                'ville' => $pappers['ville']
+                'ville' => $rne?->ville
                     ?? ($etablissements[0]['ville'] ?? null),
 
                 'raw_data' => [
                     'rnic' => $coproData,
                     'sirene' => $sirene,
                     'etablissements' => $etablissements,
-                    'pappers' => $pappers,
+                    'rne' => $rne?->toArray(),
                 ],
             ]
         );
@@ -376,41 +385,50 @@ class DataRocketEngineService
         }
 
         return collect($items)
-            ->unique(fn ($item) => ($item['siren'] ?? '') . '|' . ($item['nom'] ?? ''))
+            ->unique(fn($item) => ($item['siren'] ?? '') . '|' . ($item['nom'] ?? ''))
             ->values()
             ->toArray();
     }
 
-    private function enrichProprietairesWithPappers(array $proprietaires): array
-    {
-        return collect($proprietaires)
-            ->map(function ($item) {
-                $pappers = null;
+   private function enrichProprietairesWithRne(array $proprietaires): array
+{
+    return collect($proprietaires)
+        ->map(function ($item) {
+            $rne = null;
 
-                if (!empty($item['siren']) && strlen($item['siren']) === 9) {
-                    $pappers = $this->pappersApi->searchBySiren($item['siren']);
-                }
+            if (!empty($item['siren']) && strlen($item['siren']) === 9) {
+                $rne = RneEntreprise::where('siren', $item['siren'])->first();
+            }
 
-                return [
-                    'nom' => $pappers['nom'] ?? $item['nom'] ?? null,
-                    'nom_bdnb' => $item['nom'] ?? null,
-                    'siren' => $item['siren'] ?? null,
-                    'siret' => $pappers['siret'] ?? null,
-                    'forme_juridique' => $pappers['forme_juridique'] ?? null,
-                    'activite' => $pappers['activite'] ?? null,
-                    'capital_social' => $pappers['capital_social'] ?? null,
-                    'chiffre_affaires' => $pappers['chiffre_affaires'] ?? null,
-                    'resultat' => $pappers['resultat'] ?? null,
-                    'effectif' => $pappers['effectif'] ?? null,
-                    'date_creation' => $pappers['date_creation'] ?? null,
-                    'dirigeant_principal' => $pappers['dirigeant_principal'] ?? null,
-                    'url_pappers' => $pappers['url_pappers'] ?? null,
-                    'raw_data' => $pappers['raw_data'] ?? null,
-                ];
-            })
-            ->values()
-            ->toArray();
-    }
+            return [
+                'nom' => $rne?->denomination ?? $item['nom'] ?? null,
+                'nom_bdnb' => $item['nom'] ?? null,
+                'siren' => $item['siren'] ?? null,
+
+                'siret' => $rne?->siret_siege,
+                'forme_juridique' => $rne?->forme_juridique,
+                'activite' => $rne?->activite,
+
+                'capital_social' => $rne?->capital_formatted ?? $rne?->capital_social,
+                'capital_social_numeric' => $rne?->capital_social_numeric,
+
+                'chiffre_affaires' => null,
+                'resultat' => null,
+                'effectif' => null,
+
+                'date_creation' => optional($rne?->date_creation)->format('Y-m-d'),
+
+                'dirigeant_principal' => data_get($rne?->dirigeants, '0.nom')
+                    ?? data_get($rne?->dirigeants, '0.prenoms')
+                    ?? null,
+
+                'url_pappers' => null,
+                'raw_data' => $rne?->raw_data,
+            ];
+        })
+        ->values()
+        ->toArray();
+}
 
     private function selectMainBuildings(array $batiments): array
     {
@@ -419,7 +437,7 @@ class DataRocketEngineService
         }
 
         $scored = collect($batiments)
-            ->map(fn ($batiment) => [
+            ->map(fn($batiment) => [
                 'score' => $this->mainBuildingScore($batiment),
                 'data' => $batiment,
             ])

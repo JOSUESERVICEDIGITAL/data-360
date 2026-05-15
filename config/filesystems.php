@@ -41,18 +41,15 @@ return [
         | INPI RNE FTP
         |--------------------------------------------------------------------------
         */
-        'inpi_sftp' => [
+        'inpi_ftp' => [
             'driver' => 'ftp',
-            'host' => env('INPI_SFTP_HOST', 'www.inpi.net'),
-            'username' => env('INPI_SFTP_USERNAME'),
-            'password' => env('INPI_SFTP_PASSWORD'),
-            'root' => env('INPI_SFTP_ROOT', '/'),
-            'port' => (int) env('INPI_SFTP_PORT', 21),
+            'host' => env('INPI_FTP_HOST', 'www.inpi.net'),
+            'username' => env('INPI_FTP_USERNAME'),
+            'password' => env('INPI_FTP_PASSWORD'),
+            'root' => env('INPI_FTP_ROOT', '/'),
             'passive' => true,
             'ssl' => false,
             'timeout' => 120,
-            'ignore_passive_address' => true,
-            'throw' => true,
         ],
     ],
 
