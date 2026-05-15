@@ -4,7 +4,8 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Back\NotificationController;
 use App\Http\Controllers\PaymentController;
-
+// use ZipArchive;
+// use Illuminate\Support\Facades\Storage;
 
 
 // Route::get('/', function () {
@@ -34,6 +35,38 @@ Route::middleware('auth')->group(function () {
     Route::post('/payment/process', [PaymentController::class, 'process'])->name('payment.process');
 
 });
+
+
+
+
+
+
+
+
+
+
+// Route::get('/test-zip', function () {
+
+//     $zipPath = storage_path('app/imports/inpi/stock_RNE_formalites_NIVEAU1_20260304_1400.zip');
+
+//     $zip = new ZipArchive();
+
+//     if ($zip->open($zipPath) === true) {
+
+//         for ($i = 0; $i < $zip->numFiles; $i++) {
+//             echo $zip->getNameIndex($i) . '<br>';
+//         }
+
+//         $zip->close();
+
+//     } else {
+//         echo 'Impossible ouvrir ZIP';
+//     }
+// });
+
+
+
+
 
 
 require __DIR__ . '/auth.php';

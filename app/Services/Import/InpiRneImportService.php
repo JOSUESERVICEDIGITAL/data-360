@@ -46,7 +46,7 @@ class InpiRneImportService
             throw new \RuntimeException("Impossible d’ouvrir le ZIP : {$zipPath}");
         }
 
-        $zip->extractTo($extractDir);
+        // $zip->extractTo($extractDir);
         $zip->close();
 
         $count = 0;
