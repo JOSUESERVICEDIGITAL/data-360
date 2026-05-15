@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Back\RnicCopropriete;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +14,12 @@ class ImportRnic extends Command
 
     public function handle(): int
     {
+        DB::disableQueryLog();
+
+        DB::statement("SET SESSION wait_timeout=28800");
+        DB::statement("SET SESSION net_read_timeout=600");
+        DB::statement("SET SESSION net_write_timeout=600");
+
         $path = storage_path('app/rnic.csv');
 
         if (!file_exists($path)) {
@@ -28,6 +33,7 @@ class ImportRnic extends Command
         }
 
         $delimiter = $this->detectDelimiter($path);
+
         $handle = fopen($path, 'r');
 
         $rawHeader = fgetcsv($handle, 0, $delimiter);
@@ -45,7 +51,10 @@ class ImportRnic extends Command
         $count = 0;
         $ignored = 0;
 
+        $batch = [];
+        $batchSize = 200;
         while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+
             if (count($row) < count($header)) {
                 $row = array_pad($row, count($header), null);
             }
@@ -142,7 +151,6 @@ class ImportRnic extends Command
                 $representant = trim($representant);
             }
 
-
             $siretSyndic = $this->onlyDigits($this->get($data, [
                 'siret_representant_legal',
                 'siret_syndic',
@@ -173,74 +181,108 @@ class ImportRnic extends Command
 
             $adressesAssociees = $this->adressesAssociees($data);
 
-            RnicCopropriete::updateOrCreate(
-                [
-                    'numero_immatriculation' => $numeroImmatriculation ?: md5(($adresse ?? '') . ($codePostal ?? '') . ($ville ?? '')),
-                ],
-                [
-                    'nom_copropriete' => $nomCopro,
+            $batch[] = [
+                'numero_immatriculation' =>
+                $numeroImmatriculation
+                    ?: md5(($adresse ?? '') . ($codePostal ?? '') . ($ville ?? '')),
 
-                    'adresse_complete' => $adresse,
-                    'code_postal' => $codePostal,
-                    'ville' => $ville,
-                    'code_insee' => $codeInsee,
+                'nom_copropriete' => $nomCopro,
 
-                    'siren_copropriete' => $this->onlyDigits($this->get($data, [
-                        'siren_copropriete',
-                        'siren_du_syndicat',
-                        'siren_syndicat',
-                    ])),
+                'adresse_complete' => $adresse,
+                'code_postal' => $codePostal,
+                'ville' => $ville,
+                'code_insee' => $codeInsee,
 
-                    'nombre_lots_total' => $this->toInt($this->get($data, [
-                        'nombre_total_lots',
-                        'nombre_lots_total',
-                        'nb_lots_total',
-                        'nombre_total_de_lots',
-                        'total_lots',
-                    ])),
+                'siren_copropriete' => $this->onlyDigits($this->get($data, [
+                    'siren_copropriete',
+                    'siren_du_syndicat',
+                    'siren_syndicat',
+                ])),
 
-                    'nombre_lots_habitation' => $this->toInt($this->get($data, [
-                        'nombre_lots_habitation',
-                        'nb_lots_habitation',
-                        'nombre_de_lots_a_usage_d_habitation',
-                        'lots_habitation',
-                        'nombre_lots_usage_habitation',
-                    ])),
+                'nombre_lots_total' => $this->toInt($this->get($data, [
+                    'nombre_total_lots',
+                    'nombre_lots_total',
+                    'nb_lots_total',
+                    'nombre_total_de_lots',
+                    'total_lots',
+                ])),
 
-                    'nombre_batiments' => $this->toInt($this->get($data, [
-                        'nombre_batiments',
-                        'nb_batiments',
-                        'nombre_de_batiments',
-                    ])),
+                'nombre_lots_habitation' => $this->toInt($this->get($data, [
+                    'nombre_lots_habitation',
+                    'nb_lots_habitation',
+                    'nombre_de_lots_a_usage_d_habitation',
+                    'lots_habitation',
+                    'nombre_lots_usage_habitation',
+                ])),
 
-                    'nombre_adresses_associees' => count($adressesAssociees),
+                'nombre_batiments' => $this->toInt($this->get($data, [
+                    'nombre_batiments',
+                    'nb_batiments',
+                    'nombre_de_batiments',
+                ])),
 
-                    'representant_legal_connu' => !empty($representant) && $representant !== 'Identité non partagée en Open Data',
-                    'representant_legal_nom' => $representant,
-                    'representant_legal_type' => $representant ? ($this->get($data, ['type_syndic']) ?: 'syndic') : 'inconnu',
-                    'message_representant' => $representant ? null : 'Pas de représentant légal connu',
+                'nombre_adresses_associees' => count($adressesAssociees),
 
-                    'syndic_nom' => $representant,
-                    'siren_syndic' => $sirenSyndic,
-                    'siret_syndic' => $siretSyndic,
+                'representant_legal_connu' =>
+                !empty($representant)
+                    && $representant !== 'Identité non partagée en Open Data',
 
-                    'statut' => $this->get($data, ['mandat_en_cours', 'statut', 'etat', 'statut_immatriculation']),
-                    'date_immatriculation' => $this->normalizeDate($this->get($data, [
+                'representant_legal_nom' => $representant,
+
+                'representant_legal_type' =>
+                $representant
+                    ? ($this->get($data, ['type_syndic']) ?: 'syndic')
+                    : 'inconnu',
+
+                'message_representant' =>
+                $representant
+                    ? null
+                    : 'Pas de représentant légal connu',
+
+                'syndic_nom' => $representant,
+                'siren_syndic' => $sirenSyndic,
+                'siret_syndic' => $siretSyndic,
+
+                'statut' => $this->get($data, [
+                    'mandat_en_cours',
+                    'statut',
+                    'etat',
+                    'statut_immatriculation',
+                ]),
+
+                'date_immatriculation' => $this->normalizeDate(
+                    $this->get($data, [
                         'date_immatriculation',
                         'date_d_immatriculation',
-                    ])),
+                    ])
+                ),
 
-                    'raw_data' => array_merge($data, [
-                        'adresses_associees_liste' => $adressesAssociees,
-                    ]),
-                ]
-            );
+                'raw_data' => json_encode(array_merge($data, [
+                    'adresses_associees_liste' => $adressesAssociees,
+                ])),
 
-            $count++;
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
 
-            if ($count % 1000 === 0) {
+            if (count($batch) >= $batchSize) {
+
+                DB::table('rnic_coproprietes')->insert($batch);
+
+                $count += count($batch);
+
                 $this->info("Import : {$count} lignes | ignorées : {$ignored}");
+
+                $batch = [];
+                gc_collect_cycles();
             }
+        }
+
+        if (!empty($batch)) {
+
+            DB::table('rnic_coproprietes')->insert($batch);
+
+            $count += count($batch);
         }
 
         fclose($handle);
@@ -267,22 +309,19 @@ class ImportRnic extends Command
             $value = $this->get($data, [$key]);
 
             if ($value) {
-                $adresses[] = $value;
+                $adresses[] = trim($value);
             }
         }
 
-        return collect($adresses)
-            ->map(fn($adresse) => trim($adresse))
-            ->filter()
-            ->unique()
-            ->values()
-            ->toArray();
+        return array_values(array_unique(array_filter($adresses)));
     }
 
     private function detectDelimiter(string $path): string
     {
         $handle = fopen($path, 'r');
+
         $line = fgets($handle);
+
         fclose($handle);
 
         $delimiters = [
@@ -299,6 +338,7 @@ class ImportRnic extends Command
     private function normalizeKey(?string $key): string
     {
         $key = Str::ascii(mb_strtolower(trim((string) $key)));
+
         $key = preg_replace('/[^a-z0-9]+/', '_', $key);
 
         return trim($key, '_');
@@ -307,6 +347,7 @@ class ImportRnic extends Command
     private function get(array $data, array $keys): ?string
     {
         foreach ($keys as $key) {
+
             $key = $this->normalizeKey($key);
 
             if (isset($data[$key]) && trim((string) $data[$key]) !== '') {
