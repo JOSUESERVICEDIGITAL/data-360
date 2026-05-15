@@ -8,14 +8,25 @@ use Illuminate\Support\Facades\Storage;
 
 class SyncInpiRne extends Command
 {
-    protected $signature = 'inpi:sync 
-        {--limit=1 : Nombre max de fichiers à télécharger}
-        {--type=formalites : Type de fichier à télécharger: formalites|comptes|all}';
-
+    protected $signature = '
+    inpi:sync
+    {--limit=3 : Nombre max de fichiers}
+    {--type=formalites : formalites ou comptes}
+    {--fresh : Vide la table avant import}
+';
     protected $description = 'Synchronise les fichiers RNE depuis le FTP INPI et importe les entreprises en local';
 
     public function handle(InpiRneImportService $importService): int
     {
+        if ($this->option('fresh')) {
+            $this->warn('Vidage de la table rne_entreprises...');
+
+            \App\Models\Back\RneEntreprise::truncate();
+
+            $this->info('Table vidée.');
+        } else {
+            $this->info('Import en mode incrémental (les entreprises déjà présentes ne seront pas réimportées).');
+        }
         ini_set('memory_limit', env('INPI_RNE_MEMORY_LIMIT', '2048M'));
         set_time_limit((int) env('INPI_RNE_TIMEOUT', 0));
 
