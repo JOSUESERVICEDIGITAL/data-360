@@ -1,5 +1,4 @@
 <?php
-
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Back\BlockedIdentityController;
 use App\Http\Controllers\Back\UserController;
@@ -17,10 +16,14 @@ Route::middleware(['auth', 'verified', 'is_admin'])
             Route::get('/{user}/edit', [UserController::class, 'edit'])->name('edit');
             Route::put('/{user}', [UserController::class, 'update'])->name('update');
             Route::delete('/{user}', [UserController::class, 'destroy'])->name('destroy');
+            
+            // ✅ ROUTE MANQUANTE POUR LA SUPPRESSION EN MASSE
+            Route::delete('/bulk-delete', [UserController::class, 'bulkDelete'])->name('bulkDelete');
 
             Route::post('/give-credits', [UserController::class, 'giveCredits'])->name('giveCredits');
             Route::post('/remove-credits', [UserController::class, 'removeCredits'])->name('removeCredits');
 
+            // ⚠️ Ces routes fonctionnent avec l'ID dans l'URL
             Route::post('/{user}/toggle-active', [UserController::class, 'toggleActive'])->name('toggleActive');
             Route::post('/{user}/make-admin', [UserController::class, 'makeAdmin'])->name('makeAdmin');
             Route::post('/{user}/remove-admin', [UserController::class, 'removeAdmin'])->name('removeAdmin');

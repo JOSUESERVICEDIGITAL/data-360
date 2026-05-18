@@ -88,6 +88,15 @@ class RechercheController extends Controller
 
         return redirect()
             ->route('back.recherches.index')
-            ->with('success', 'Recherche supprimée.');
+            ->with('success', 'Recherche supprimée avec succès.');
+    }
+
+    public function reset()
+    {
+        Recherche::query()->delete();
+
+        return redirect()
+            ->route('back.recherches.index')
+            ->with('success', 'Toutes les recherches ont été supprimées.');
     }
 }

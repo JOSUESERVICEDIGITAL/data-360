@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
+
 class UserController extends Controller
 {
     public function index(Request $request)
@@ -234,10 +235,33 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
+        if ($user->id === auth()->id()) {
+            return back()->with('error', 'Vous ne pouvez pas supprimer votre propre compte.');
+        }
+
         $user->delete();
 
-        return redirect()
-            ->route('admin.security.users.index')
-            ->with('success', "Utilisateur supprimé avec succès.");
+        return back()->with('success', 'Utilisateur supprimé avec succès.');
     }
+
+
+    public function bulkDelete(Request $request)
+{
+    $ids = $request->user_ids ?? [];
+
+    if (empty($ids)) {
+        return back()->with('error', 'Aucun utilisateur sélectionné.');
+    }
+
+    // empêcher suppression de soi-même
+    $ids = collect($ids)
+        ->filter(fn ($id) => $id != auth()->id())
+        ->toArray();
+
+    \App\Models\User::whereIn('id', $ids)->delete();
+
+    return redirect()
+        ->route('admin.security.users.index')
+        ->with('success', 'Utilisateurs supprimés avec succès.');
+}
 }

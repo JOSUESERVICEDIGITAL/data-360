@@ -60,4 +60,13 @@ class SyndicController extends Controller
             ->route('back.syndics.index')
             ->with('success', 'Syndic supprimé avec succès.');
     }
+
+    public function reset()
+    {
+        Syndic::query()->delete();
+
+        return redirect()
+            ->route('back.syndics.index')
+            ->with('success', 'Tous les syndics ont été supprimés.');
+    }
 }

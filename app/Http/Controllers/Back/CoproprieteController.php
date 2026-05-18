@@ -127,12 +127,25 @@ class CoproprieteController extends Controller
     | DELETE
     |--------------------------------------------------------------------------
     */
-    public function destroy(Copropriete $copropriete)
+    public function destroy(\App\Models\Back\Copropriete $copropriete)
     {
+        $copropriete->syndics()->detach();
+
         $copropriete->delete();
 
         return redirect()
             ->route('back.coproprietes.index')
-            ->with('success', 'Copropriété supprimée.');
+            ->with('success', 'Copropriété supprimée avec succès.');
+    }
+
+    public function reset()
+    {
+        \DB::table('copropriete_syndic')->delete();
+
+        \App\Models\Back\Copropriete::query()->delete();
+
+        return redirect()
+            ->route('back.coproprietes.index')
+            ->with('success', 'Toutes les copropriétés ont été supprimées.');
     }
 }

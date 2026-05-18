@@ -16,8 +16,8 @@ Route::middleware(['auth', 'verified', 'is_admin'])
     ->name('back.')
     ->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-       
-    // =========================
+
+        // =========================
         // ADRESSES
         // =========================
         Route::delete('adresses/reset/all', [AdresseController::class, 'reset'])
@@ -36,27 +36,64 @@ Route::middleware(['auth', 'verified', 'is_admin'])
 
 
 
-        Route::get('coproprietes', [CoproprieteController::class, 'index'])->name('coproprietes.index');
-        Route::get('coproprietes/create', [CoproprieteController::class, 'create'])->name('coproprietes.create');
-        Route::post('coproprietes', [CoproprieteController::class, 'store'])->name('coproprietes.store');
-        Route::get('coproprietes/{copropriete}', [CoproprieteController::class, 'show'])->name('coproprietes.show');
-        Route::get('coproprietes/{copropriete}/edit', [CoproprieteController::class, 'edit'])->name('coproprietes.edit');
-        Route::put('coproprietes/{copropriete}', [CoproprieteController::class, 'update'])->name('coproprietes.update');
-        Route::delete('coproprietes/{copropriete}', [CoproprieteController::class, 'destroy'])->name('coproprietes.destroy');
+        Route::delete('coproprietes/reset/all', [CoproprieteController::class, 'reset'])
+            ->name('coproprietes.reset');
+
+        Route::resource('coproprietes', CoproprieteController::class);
+
+
+        Route::delete('syndics/reset/all', [SyndicController::class, 'reset'])
+            ->name('syndics.reset');
 
         Route::get('syndics', [SyndicController::class, 'index'])->name('syndics.index');
+
         Route::get('syndics/create', [SyndicController::class, 'create'])->name('syndics.create');
+
         Route::post('syndics', [SyndicController::class, 'store'])->name('syndics.store');
+
         Route::get('syndics/{syndic}', [SyndicController::class, 'show'])->name('syndics.show');
+
         Route::get('syndics/{syndic}/edit', [SyndicController::class, 'edit'])->name('syndics.edit');
+
         Route::put('syndics/{syndic}', [SyndicController::class, 'update'])->name('syndics.update');
+
         Route::delete('syndics/{syndic}', [SyndicController::class, 'destroy'])->name('syndics.destroy');
 
-        Route::get('recherches', [RechercheController::class, 'index'])->name('recherches.index');
-        Route::get('recherches/create', [RechercheController::class, 'create'])->name('recherches.create');
-        Route::post('recherches/search', [RechercheController::class, 'search'])->name('recherches.search');
-        Route::get('recherches/{recherche}', [RechercheController::class, 'show'])->name('recherches.show');
-        Route::delete('recherches/{recherche}', [RechercheController::class, 'destroy'])->name('recherches.destroy');
+
+
+        Route::get('recherches', [RechercheController::class, 'index'])
+            ->name('recherches.index');
+
+        Route::get('recherches/create', [RechercheController::class, 'create'])
+            ->name('recherches.create');
+
+        Route::post('recherches/search', [RechercheController::class, 'search'])
+            ->name('recherches.search');
+
+        /*
+|--------------------------------------------------------------------------
+| RESET GLOBAL
+|--------------------------------------------------------------------------
+*/
+
+        Route::delete('recherches/reset/all', [RechercheController::class, 'reset'])
+            ->name('recherches.reset');
+
+        /*
+|--------------------------------------------------------------------------
+| ROUTES PAR RECHERCHE
+|--------------------------------------------------------------------------
+*/
+
+        Route::get('recherches/{recherche}', [RechercheController::class, 'show'])
+            ->name('recherches.show');
+
+        Route::delete('recherches/{recherche}', [RechercheController::class, 'destroy'])
+            ->name('recherches.destroy');
+
+
+
+
 
         Route::get('imports', [ImportCsvController::class, 'index'])->name('imports.index');
         Route::get('imports/create', [ImportCsvController::class, 'create'])->name('imports.create');

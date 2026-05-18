@@ -22,678 +22,513 @@
         --dr-dark:#0f172a;
         --dr-muted:#64748b;
         --dr-border:#e2e8f0;
-        --dr-bg:#f8fafc;
-        --dr-card:#ffffff;
     }
 
     .users-page {
-        min-height: 100vh;
-        padding: 28px;
-        background:
-            radial-gradient(circle at top left, rgba(0,83,179,.08), transparent 32%),
-            linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+        min-height:100vh;
+        padding:28px;
+        background:radial-gradient(circle at top left, rgba(0,83,179,.08), transparent 32%),linear-gradient(180deg,#f8fafc 0%,#eef2f7 100%);
     }
 
-    .users-container {
-        max-width: 1320px;
-        margin: 0 auto;
-    }
+    .users-container {max-width:1320px;margin:0 auto}
 
     .users-hero {
-        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 62%, #0053b3 100%);
-        color: white;
-        border-radius: 30px;
-        padding: 30px;
-        box-shadow: 0 24px 70px rgba(15,23,42,.20);
-        display: flex;
-        justify-content: space-between;
-        gap: 22px;
-        align-items: flex-start;
-        margin-bottom: 22px;
-        overflow: hidden;
-        position: relative;
+        background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 62%,#0053b3 100%);
+        color:white;
+        border-radius:30px;
+        padding:30px;
+        box-shadow:0 24px 70px rgba(15,23,42,.20);
+        display:flex;
+        justify-content:space-between;
+        gap:22px;
+        align-items:flex-start;
+        margin-bottom:22px;
+        overflow:hidden;
+        position:relative;
     }
 
     .users-hero::after {
-        content: "";
-        position: absolute;
-        right: -90px;
-        top: -120px;
-        width: 300px;
-        height: 300px;
-        border-radius: 999px;
-        background: rgba(255,255,255,.10);
+        content:"";
+        position:absolute;
+        right:-90px;
+        top:-120px;
+        width:300px;
+        height:300px;
+        border-radius:999px;
+        background:rgba(255,255,255,.10);
     }
 
     .hero-kicker {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        border: 1px solid rgba(255,255,255,.18);
-        background: rgba(255,255,255,.12);
-        border-radius: 999px;
-        padding: 8px 12px;
-        font-size: 12px;
-        font-weight: 900;
-        margin-bottom: 14px;
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+        border:1px solid rgba(255,255,255,.18);
+        background:rgba(255,255,255,.12);
+        border-radius:999px;
+        padding:8px 12px;
+        font-size:12px;
+        font-weight:900;
+        margin-bottom:14px;
     }
 
     .users-hero h1 {
-        margin: 0;
-        font-size: clamp(28px, 4vw, 42px);
-        font-weight: 950;
-        letter-spacing: -.03em;
-        line-height: 1.05;
+        margin:0;
+        font-size:clamp(28px,4vw,42px);
+        font-weight:950;
+        letter-spacing:-.03em;
+        line-height:1.05;
     }
 
     .users-hero p {
-        margin: 12px 0 0;
-        color: rgba(255,255,255,.78);
-        line-height: 1.65;
-        max-width: 760px;
+        margin:12px 0 0;
+        color:rgba(255,255,255,.78);
+        line-height:1.65;
+        max-width:760px;
     }
 
     .hero-actions {
-        position: relative;
-        z-index: 2;
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        justify-content: flex-end;
+        position:relative;
+        z-index:2;
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
+        justify-content:flex-end;
     }
 
     .dr-btn {
-        border: none;
-        border-radius: 14px;
-        padding: 12px 16px;
-        font-size: 13px;
-        font-weight: 900;
-        cursor: pointer;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        transition: .2s ease;
-        white-space: nowrap;
+        border:none;
+        border-radius:14px;
+        padding:12px 16px;
+        font-size:13px;
+        font-weight:900;
+        cursor:pointer;
+        text-decoration:none;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:8px;
+        transition:.2s ease;
+        white-space:nowrap;
     }
 
-    .dr-btn-primary {
-        background: var(--dr-primary);
-        color: white;
-    }
-
-    .dr-btn-primary:hover {
-        background: var(--dr-primary-dark);
-        color: white;
-        transform: translateY(-1px);
-    }
-
-    .dr-btn-white {
-        background: white;
-        color: var(--dr-primary);
-    }
-
-    .dr-btn-white:hover {
-        background: #eff6ff;
-        color: var(--dr-primary-dark);
-    }
-
-    .dr-btn-soft {
-        background: #f1f5f9;
-        color: #334155;
-    }
-
-    .dr-btn-soft:hover {
-        background: #e2e8f0;
-        color: #0f172a;
-    }
-
-    .dr-btn-danger {
-        background: var(--dr-danger);
-        color: white;
-    }
-
-    .dr-btn-danger:hover {
-        background: #991b1b;
-        color: white;
-    }
-
-    .dr-btn-warning {
-        background: var(--dr-warning);
-        color: white;
-    }
-
-    .dr-btn-warning:hover {
-        background: #92400e;
-        color: white;
-    }
-
-    .dr-btn-sm {
-        padding: 9px 12px;
-        font-size: 12px;
-        border-radius: 12px;
-    }
+    .dr-btn-primary {background:var(--dr-primary);color:white}
+    .dr-btn-primary:hover {background:var(--dr-primary-dark);color:white}
+    .dr-btn-white {background:white;color:var(--dr-primary)}
+    .dr-btn-soft {background:#f1f5f9;color:#334155}
+    .dr-btn-danger {background:var(--dr-danger);color:white}
+    .dr-btn-warning {background:var(--dr-warning);color:white}
 
     .kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 16px;
-        margin-bottom: 22px;
+        display:grid;
+        grid-template-columns:repeat(5,minmax(0,1fr));
+        gap:16px;
+        margin-bottom:22px;
     }
 
     .kpi-card {
-        background: white;
-        border: 1px solid var(--dr-border);
-        border-radius: 22px;
-        padding: 18px;
-        box-shadow: 0 12px 35px rgba(15,23,42,.045);
+        background:white;
+        border:1px solid var(--dr-border);
+        border-radius:22px;
+        padding:18px;
+        box-shadow:0 12px 35px rgba(15,23,42,.045);
     }
 
     .kpi-icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        background: var(--dr-primary-soft);
-        color: var(--dr-primary);
-        margin-bottom: 12px;
+        width:42px;
+        height:42px;
+        border-radius:14px;
+        display:grid;
+        place-items:center;
+        background:var(--dr-primary-soft);
+        color:var(--dr-primary);
+        margin-bottom:12px;
     }
 
     .kpi-label {
-        color: var(--dr-muted);
-        font-size: 11px;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: .08em;
-        margin-bottom: 7px;
+        color:var(--dr-muted);
+        font-size:11px;
+        font-weight:900;
+        text-transform:uppercase;
+        letter-spacing:.08em;
+        margin-bottom:7px;
     }
 
     .kpi-value {
-        color: var(--dr-dark);
-        font-size: 24px;
-        font-weight: 950;
+        color:var(--dr-dark);
+        font-size:24px;
+        font-weight:950;
     }
 
     .panel {
-        background: white;
-        border: 1px solid var(--dr-border);
-        border-radius: 24px;
-        box-shadow: 0 12px 35px rgba(15,23,42,.045);
-        margin-bottom: 22px;
-        overflow: hidden;
+        background:white;
+        border:1px solid var(--dr-border);
+        border-radius:24px;
+        box-shadow:0 12px 35px rgba(15,23,42,.045);
+        margin-bottom:22px;
+        overflow:hidden;
     }
 
     .panel-header {
-        padding: 20px 22px;
-        border-bottom: 1px solid var(--dr-border);
-        display: flex;
-        justify-content: space-between;
-        gap: 18px;
-        align-items: center;
+        padding:20px 22px;
+        border-bottom:1px solid var(--dr-border);
+        display:flex;
+        justify-content:space-between;
+        gap:18px;
+        align-items:center;
     }
 
     .panel-title {
-        display: flex;
-        align-items: center;
-        gap: 12px;
+        display:flex;
+        align-items:center;
+        gap:12px;
     }
 
     .panel-title-icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        background: var(--dr-primary-soft);
-        color: var(--dr-primary);
+        width:42px;
+        height:42px;
+        border-radius:14px;
+        display:grid;
+        place-items:center;
+        background:var(--dr-primary-soft);
+        color:var(--dr-primary);
     }
 
     .panel-title h2 {
-        margin: 0;
-        font-size: 19px;
-        font-weight: 950;
-        color: var(--dr-dark);
+        margin:0;
+        font-size:19px;
+        font-weight:950;
+        color:var(--dr-dark);
     }
 
     .panel-title p {
-        margin: 4px 0 0;
-        color: var(--dr-muted);
-        font-size: 13px;
+        margin:4px 0 0;
+        color:var(--dr-muted);
+        font-size:13px;
     }
 
     .filter-form {
-        padding: 20px 22px;
-        display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: 12px;
-        align-items: center;
+        padding:20px 22px;
+        display:grid;
+        grid-template-columns:1fr auto auto;
+        gap:12px;
+        align-items:center;
     }
 
-    .search-box {
-        position: relative;
-    }
+    .search-box {position:relative}
 
     .search-box i {
-        position: absolute;
-        left: 14px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #94a3b8;
+        position:absolute;
+        left:14px;
+        top:50%;
+        transform:translateY(-50%);
+        color:#94a3b8;
     }
 
     .search-box input {
-        width: 100%;
-        border: 1.5px solid var(--dr-border);
-        border-radius: 15px;
-        padding: 13px 14px 13px 42px;
-        font-size: 14px;
-        outline: none;
-        transition: .2s ease;
-    }
-
-    .search-box input:focus {
-        border-color: var(--dr-primary);
-        box-shadow: 0 0 0 4px rgba(0,83,179,.10);
+        width:100%;
+        border:1.5px solid var(--dr-border);
+        border-radius:15px;
+        padding:13px 14px 13px 42px;
+        font-size:14px;
+        outline:none;
     }
 
     .alert {
-        border-radius: 16px;
-        padding: 14px 16px;
-        margin-bottom: 18px;
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        font-weight: 800;
+        border-radius:16px;
+        padding:14px 16px;
+        margin-bottom:18px;
+        display:flex;
+        align-items:flex-start;
+        gap:10px;
+        font-weight:800;
     }
 
-    .alert-success {
-        background: var(--dr-success-soft);
-        color: #166534;
-        border: 1px solid #bbf7d0;
+    .alert-success {background:var(--dr-success-soft);color:#166534;border:1px solid #bbf7d0}
+    .alert-error {background:var(--dr-danger-soft);color:#991b1b;border:1px solid #fecaca}
+
+    .bulk-bar {
+        padding:0 22px 18px;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:10px;
+        flex-wrap:wrap;
     }
 
-    .alert-error {
-        background: var(--dr-danger-soft);
-        color: #991b1b;
-        border: 1px solid #fecaca;
+    .bulk-info {
+        color:#64748b;
+        font-size:13px;
+        font-weight:800;
     }
 
-    .table-wrapper {
-        overflow-x: auto;
-    }
+    .table-wrapper {overflow-x:auto}
 
     .users-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
+        width:100%;
+        border-collapse:separate;
+        border-spacing:0;
     }
 
     .users-table th {
-        background: #f8fafc;
-        color: #64748b;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: .08em;
-        font-weight: 950;
-        text-align: left;
-        padding: 14px 16px;
-        border-bottom: 1px solid var(--dr-border);
-        white-space: nowrap;
+        background:#f8fafc;
+        color:#64748b;
+        font-size:11px;
+        text-transform:uppercase;
+        letter-spacing:.08em;
+        font-weight:950;
+        text-align:left;
+        padding:14px 16px;
+        border-bottom:1px solid var(--dr-border);
+        white-space:nowrap;
     }
 
     .users-table td {
-        padding: 16px;
-        border-bottom: 1px solid var(--dr-border);
-        vertical-align: middle;
-        color: #334155;
-        font-size: 14px;
+        padding:16px;
+        border-bottom:1px solid var(--dr-border);
+        vertical-align:middle;
+        color:#334155;
+        font-size:14px;
     }
 
-    .users-table tr:hover td {
-        background: #f8fafc;
-    }
+    .users-table tr:hover td {background:#f8fafc}
 
     .user-identity {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-width: 260px;
+        display:flex;
+        align-items:center;
+        gap:12px;
+        min-width:260px;
     }
 
     .avatar {
-        width: 44px;
-        height: 44px;
-        border-radius: 15px;
-        display: grid;
-        place-items: center;
-        background: linear-gradient(135deg, #0053b3, #1d4ed8);
-        color: white;
-        font-weight: 950;
-        flex: 0 0 auto;
-        text-transform: uppercase;
+        width:44px;
+        height:44px;
+        border-radius:15px;
+        display:grid;
+        place-items:center;
+        background:linear-gradient(135deg,#0053b3,#1d4ed8);
+        color:white;
+        font-weight:950;
+        flex:0 0 auto;
+        text-transform:uppercase;
     }
 
-    .user-name {
-        color: var(--dr-dark);
-        font-weight: 950;
-        line-height: 1.2;
-    }
+    .user-name {color:var(--dr-dark);font-weight:950;line-height:1.2}
+    .user-email,.user-phone,.user-id {color:var(--dr-muted);font-size:12px;margin-top:3px}
 
-    .user-email,
-    .user-phone,
-    .user-id {
-        color: var(--dr-muted);
-        font-size: 12px;
-        margin-top: 3px;
-    }
-
-    .badge-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        min-width: 210px;
-    }
+    .badge-list {display:flex;flex-wrap:wrap;gap:6px;min-width:210px}
 
     .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        border-radius: 999px;
-        padding: 6px 9px;
-        font-size: 11px;
-        font-weight: 900;
-        white-space: nowrap;
+        display:inline-flex;
+        align-items:center;
+        gap:5px;
+        border-radius:999px;
+        padding:6px 9px;
+        font-size:11px;
+        font-weight:900;
+        white-space:nowrap;
     }
 
-    .badge-success {
-        color: #166534;
-        background: var(--dr-success-soft);
-    }
-
-    .badge-danger {
-        color: #991b1b;
-        background: var(--dr-danger-soft);
-    }
-
-    .badge-info {
-        color: #1e40af;
-        background: var(--dr-info-soft);
-    }
-
-    .badge-warning {
-        color: #92400e;
-        background: var(--dr-warning-soft);
-    }
-
-    .badge-gray {
-        color: #475569;
-        background: #f1f5f9;
-    }
+    .badge-success {color:#166534;background:var(--dr-success-soft)}
+    .badge-danger {color:#991b1b;background:var(--dr-danger-soft)}
+    .badge-info {color:#1e40af;background:var(--dr-info-soft)}
+    .badge-warning {color:#92400e;background:var(--dr-warning-soft)}
+    .badge-gray {color:#475569;background:#f1f5f9}
 
     .credits {
-        font-size: 22px;
-        font-weight: 950;
-        color: var(--dr-primary);
+        font-size:22px;
+        font-weight:950;
+        color:var(--dr-primary);
     }
 
-    .plan-pill {
-        text-transform: capitalize;
-    }
+    .plan-pill {text-transform:capitalize}
 
     .ip-box code {
-        display: inline-block;
-        background: #f1f5f9;
-        border: 1px solid #e2e8f0;
-        padding: 6px 8px;
-        border-radius: 10px;
-        color: #334155;
-        font-size: 12px;
+        display:inline-block;
+        background:#f1f5f9;
+        border:1px solid #e2e8f0;
+        padding:6px 8px;
+        border-radius:10px;
+        color:#334155;
+        font-size:12px;
     }
 
     .ip-box small {
-        display: block;
-        color: #94a3b8;
-        margin-top: 6px;
-        font-size: 12px;
+        display:block;
+        color:#94a3b8;
+        margin-top:6px;
+        font-size:12px;
     }
 
-    .actions-cell {
-        text-align: right;
-    }
+    .actions-cell {text-align:right}
 
     .action-menu {
-        position: relative;
-        display: inline-flex;
-        justify-content: flex-end;
+        position:relative;
+        display:inline-flex;
+        justify-content:flex-end;
     }
 
     .menu-trigger {
-        width: 38px;
-        height: 38px;
-        border-radius: 12px;
-        border: 1px solid var(--dr-border);
-        background: white;
-        color: #64748b;
-        cursor: pointer;
-        transition: .2s ease;
-    }
-
-    .menu-trigger:hover {
-        border-color: var(--dr-primary);
-        color: var(--dr-primary);
-        background: #f8fafc;
+        width:38px;
+        height:38px;
+        border-radius:12px;
+        border:1px solid var(--dr-border);
+        background:white;
+        color:#64748b;
+        cursor:pointer;
     }
 
     .menu-dropdown {
-        position: absolute;
-        right: 0;
-        top: 44px;
-        width: 250px;
-        background: white;
-        border: 1px solid var(--dr-border);
-        border-radius: 16px;
-        box-shadow: 0 24px 70px rgba(15,23,42,.18);
-        padding: 8px;
-        z-index: 50;
-        opacity: 0;
-        visibility: hidden;
-        transform: translateY(-8px);
-        transition: .2s ease;
+        position:absolute;
+        right:0;
+        top:44px;
+        width:255px;
+        background:white;
+        border:1px solid var(--dr-border);
+        border-radius:16px;
+        box-shadow:0 24px 70px rgba(15,23,42,.18);
+        padding:8px;
+        z-index:50;
+        opacity:0;
+        visibility:hidden;
+        transform:translateY(-8px);
+        transition:.2s ease;
     }
 
     .action-menu.active .menu-dropdown {
-        opacity: 1;
-        visibility: visible;
-        transform: translateY(0);
+        opacity:1;
+        visibility:visible;
+        transform:translateY(0);
     }
 
     .menu-item {
-        width: 100%;
-        border: none;
-        background: transparent;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 12px;
-        border-radius: 12px;
-        cursor: pointer;
-        color: #334155;
-        font-size: 13px;
-        font-weight: 800;
-        text-align: left;
-        text-decoration: none;
+        width:100%;
+        border:none;
+        background:transparent;
+        display:flex;
+        align-items:center;
+        gap:10px;
+        padding:10px 12px;
+        border-radius:12px;
+        cursor:pointer;
+        color:#334155;
+        font-size:13px;
+        font-weight:800;
+        text-align:left;
+        text-decoration:none;
     }
 
-    .menu-item:hover {
-        background: #f1f5f9;
-        color: var(--dr-primary);
-    }
-
-    .menu-item.danger {
-        color: var(--dr-danger);
-    }
-
-    .menu-item.danger:hover {
-        background: var(--dr-danger-soft);
-    }
-
-    .menu-divider {
-        height: 1px;
-        background: var(--dr-border);
-        margin: 6px 0;
-    }
+    .menu-item:hover {background:#f1f5f9;color:var(--dr-primary)}
+    .menu-item.danger {color:var(--dr-danger)}
+    .menu-item.danger:hover {background:var(--dr-danger-soft)}
+    .menu-divider {height:1px;background:var(--dr-border);margin:6px 0}
 
     .empty-state {
-        text-align: center;
-        padding: 55px 20px;
-        color: var(--dr-muted);
+        text-align:center;
+        padding:55px 20px;
+        color:var(--dr-muted);
     }
 
     .empty-state i {
-        font-size: 38px;
-        color: #cbd5e1;
-        margin-bottom: 12px;
+        font-size:38px;
+        color:#cbd5e1;
+        margin-bottom:12px;
     }
 
     .pagination-wrap {
-        padding: 18px 22px;
-        border-top: 1px solid var(--dr-border);
-        display: flex;
-        justify-content: center;
+        padding:18px 22px;
+        border-top:1px solid var(--dr-border);
+        display:flex;
+        justify-content:center;
     }
 
     .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(15,23,42,.55);
-        backdrop-filter: blur(5px);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        padding: 20px;
+        position:fixed;
+        inset:0;
+        background:rgba(15,23,42,.55);
+        backdrop-filter:blur(5px);
+        display:none;
+        align-items:center;
+        justify-content:center;
+        z-index:10000;
+        padding:20px;
     }
 
-    .modal-overlay.active {
-        display: flex;
-    }
+    .modal-overlay.active {display:flex}
 
     .modal-card {
-        width: min(520px, 100%);
-        background: white;
-        border-radius: 24px;
-        box-shadow: 0 30px 90px rgba(15,23,42,.30);
-        overflow: hidden;
-        animation: modalIn .2s ease;
-    }
-
-    @keyframes modalIn {
-        from { opacity: 0; transform: translateY(10px) scale(.98); }
-        to { opacity: 1; transform: translateY(0) scale(1); }
+        width:min(520px,100%);
+        background:white;
+        border-radius:24px;
+        box-shadow:0 30px 90px rgba(15,23,42,.30);
+        overflow:hidden;
     }
 
     .modal-header {
-        padding: 20px 22px;
-        border-bottom: 1px solid var(--dr-border);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 14px;
+        padding:20px 22px;
+        border-bottom:1px solid var(--dr-border);
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:14px;
     }
 
     .modal-header h3 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 950;
-        color: var(--dr-dark);
+        margin:0;
+        font-size:18px;
+        font-weight:950;
+        color:var(--dr-dark);
     }
 
     .modal-close {
-        width: 36px;
-        height: 36px;
-        border-radius: 12px;
-        border: none;
-        background: #f1f5f9;
-        color: #64748b;
-        cursor: pointer;
+        width:36px;
+        height:36px;
+        border-radius:12px;
+        border:none;
+        background:#f1f5f9;
+        color:#64748b;
+        cursor:pointer;
     }
 
-    .modal-body {
-        padding: 22px;
-    }
-
-    .modal-body p {
-        margin: 0;
-        color: #475569;
-        line-height: 1.6;
-    }
-
-    .modal-field {
-        margin-top: 16px;
-    }
+    .modal-body {padding:22px}
+    .modal-body p {margin:0;color:#475569;line-height:1.6}
+    .modal-field {margin-top:16px}
 
     .modal-field label {
-        display: block;
-        font-size: 13px;
-        font-weight: 900;
-        color: #334155;
-        margin-bottom: 7px;
+        display:block;
+        font-size:13px;
+        font-weight:900;
+        color:#334155;
+        margin-bottom:7px;
     }
 
     .modal-field input {
-        width: 100%;
-        border: 1.5px solid var(--dr-border);
-        border-radius: 14px;
-        padding: 12px 14px;
-        outline: none;
+        width:100%;
+        border:1.5px solid var(--dr-border);
+        border-radius:14px;
+        padding:12px 14px;
+        outline:none;
     }
 
     .modal-footer {
-        padding: 18px 22px;
-        border-top: 1px solid var(--dr-border);
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
+        padding:18px 22px;
+        border-top:1px solid var(--dr-border);
+        display:flex;
+        justify-content:flex-end;
+        gap:10px;
     }
 
-    @media (max-width: 980px) {
-        .users-hero {
-            flex-direction: column;
-        }
-
-        .hero-actions {
-            justify-content: flex-start;
-        }
-
-        .kpi-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .filter-form {
-            grid-template-columns: 1fr;
-        }
+    @media(max-width:980px) {
+        .users-hero {flex-direction:column}
+        .hero-actions {justify-content:flex-start}
+        .kpi-grid {grid-template-columns:repeat(2,minmax(0,1fr))}
+        .filter-form {grid-template-columns:1fr}
     }
 
-    @media (max-width: 640px) {
-        .users-page {
-            padding: 16px;
-        }
-
-        .users-hero,
-        .panel {
-            border-radius: 22px;
-        }
-
-        .kpi-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .users-table th,
-        .users-table td {
-            padding: 13px 12px;
-        }
+    @media(max-width:640px) {
+        .users-page {padding:16px}
+        .users-hero,.panel {border-radius:22px}
+        .kpi-grid {grid-template-columns:1fr}
+        .users-table th,.users-table td {padding:13px 12px}
     }
 </style>
 
@@ -838,10 +673,32 @@
                 </a>
             </div>
 
+            <form method="POST" action="{{ route('admin.security.users.bulkDelete') }}" id="bulkDeleteForm">
+                @csrf
+                @method('DELETE')
+            </form>
+
+            <div class="bulk-bar">
+                <div class="bulk-info">
+                    Cochez plusieurs utilisateurs pour les supprimer en une seule action.
+                </div>
+
+                <button type="submit"
+                        form="bulkDeleteForm"
+                        class="dr-btn dr-btn-danger"
+                        onclick="return confirm('Supprimer les utilisateurs sélectionnés ?');">
+                    <i class="fa-regular fa-trash-can"></i>
+                    Supprimer la sélection
+                </button>
+            </div>
+
             <div class="table-wrapper">
                 <table class="users-table">
                     <thead>
                         <tr>
+                            <th style="width:45px;">
+                                <input type="checkbox" id="checkAllUsers">
+                            </th>
                             <th>Utilisateur</th>
                             <th>Statuts</th>
                             <th>Crédits</th>
@@ -854,24 +711,34 @@
                     <tbody>
                         @forelse($users as $user)
                             @php
-                                $initials = collect(explode(' ', trim($user->name)))
+                                $initials = collect(explode(' ', trim($user->name ?? '')))
                                     ->filter()
                                     ->take(2)
                                     ->map(fn($part) => mb_substr($part, 0, 1))
                                     ->implode('');
 
-                                $safeName = e($user->name);
-                                $safeIp = e($user->last_login_ip ?? '');
+                                $safeName = addslashes($user->name ?? 'Utilisateur');
+                                $safeIp = addslashes($user->last_login_ip ?? '');
                             @endphp
 
                             <tr>
+                                <td>
+                                    @if($user->id !== auth()->id())
+                                        <input type="checkbox"
+                                               name="user_ids[]"
+                                               value="{{ $user->id }}"
+                                               class="user-checkbox"
+                                               form="bulkDeleteForm">
+                                    @endif
+                                </td>
+
                                 <td>
                                     <div class="user-identity">
                                         <div class="avatar">{{ $initials ?: 'U' }}</div>
 
                                         <div>
-                                            <div class="user-name">{{ $user->name }}</div>
-                                            <div class="user-email">{{ $user->email }}</div>
+                                            <div class="user-name">{{ $user->name ?? '-' }}</div>
+                                            <div class="user-email">{{ $user->email ?? '-' }}</div>
                                             <div class="user-phone">{{ $user->phone ?? 'Téléphone non renseigné' }}</div>
                                             <div class="user-id">ID #{{ $user->id }}</div>
                                         </div>
@@ -880,14 +747,14 @@
 
                                 <td>
                                     <div class="badge-list">
-                                        @if($user->is_admin)
+                                        @if($user->is_admin ?? false)
                                             <span class="badge badge-info">
                                                 <i class="fa-solid fa-user-shield"></i>
                                                 Admin
                                             </span>
                                         @endif
 
-                                        @if($user->is_active)
+                                        @if($user->is_active ?? false)
                                             <span class="badge badge-success">
                                                 <i class="fa-solid fa-circle-check"></i>
                                                 Actif
@@ -911,14 +778,14 @@
                                             </span>
                                         @endif
 
-                                        @if($user->otp_bypass)
+                                        @if($user->otp_bypass ?? false)
                                             <span class="badge badge-warning">
                                                 <i class="fa-solid fa-unlock-keyhole"></i>
                                                 OTP bypass
                                             </span>
                                         @endif
 
-                                        @if($user->phone_verified_at)
+                                        @if($user->phone_verified_at ?? false)
                                             <span class="badge badge-success">
                                                 <i class="fa-solid fa-mobile-screen-button"></i>
                                                 Téléphone vérifié
@@ -928,11 +795,13 @@
                                 </td>
 
                                 <td>
-                                    <div class="credits">{{ number_format($user->credits ?? 0, 0, ',', ' ') }}</div>
+                                    <div class="credits">
+                                        {{ number_format($user->credits ?? 0, 0, ',', ' ') }}
+                                    </div>
                                 </td>
 
                                 <td>
-                                    <span class="badge plan-pill {{ $user->plan === 'premium' || $user->plan === 'enterprise' ? 'badge-info' : 'badge-gray' }}">
+                                    <span class="badge plan-pill {{ in_array($user->plan ?? 'free', ['premium','enterprise']) ? 'badge-info' : 'badge-gray' }}">
                                         <i class="fa-solid fa-layer-group"></i>
                                         {{ $user->plan ?? 'free' }}
                                     </span>
@@ -957,57 +826,71 @@
                                                 Modifier
                                             </a>
 
-                                            <button class="menu-item" onclick="openActionModal('credits_add', {{ $user->id }}, '{{ $safeName }}')">
+                                            <button type="button" class="menu-item" onclick="openActionModal('credits_add', {{ $user->id }}, '{{ $safeName }}')">
                                                 <i class="fa-solid fa-circle-plus"></i>
                                                 Ajouter des crédits
                                             </button>
 
-                                            <button class="menu-item" onclick="openActionModal('credits_remove', {{ $user->id }}, '{{ $safeName }}')">
+                                            <button type="button" class="menu-item" onclick="openActionModal('credits_remove', {{ $user->id }}, '{{ $safeName }}')">
                                                 <i class="fa-solid fa-circle-minus"></i>
                                                 Retirer des crédits
                                             </button>
 
                                             <div class="menu-divider"></div>
 
-                                            <button class="menu-item" onclick="openActionModal('status', {{ $user->id }}, '{{ $safeName }}', '{{ $user->is_active ? 'suspendre' : 'reactiver' }}')">
-                                                <i class="fa-solid {{ $user->is_active ? 'fa-user-slash' : 'fa-user-check' }}"></i>
-                                                {{ $user->is_active ? 'Suspendre le compte' : 'Réactiver le compte' }}
+                                            <button type="button" class="menu-item" onclick="openActionModal('status', {{ $user->id }}, '{{ $safeName }}', '{{ ($user->is_active ?? false) ? 'suspendre' : 'reactiver' }}')">
+                                                <i class="fa-solid {{ ($user->is_active ?? false) ? 'fa-user-slash' : 'fa-user-check' }}"></i>
+                                                {{ ($user->is_active ?? false) ? 'Suspendre le compte' : 'Réactiver le compte' }}
                                             </button>
 
-                                            @if(!$user->is_admin)
-                                                <button class="menu-item" onclick="openActionModal('make_admin', {{ $user->id }}, '{{ $safeName }}')">
+                                            @if(!($user->is_admin ?? false))
+                                                <button type="button" class="menu-item" onclick="openActionModal('make_admin', {{ $user->id }}, '{{ $safeName }}')">
                                                     <i class="fa-solid fa-user-shield"></i>
                                                     Nommer administrateur
                                                 </button>
                                             @else
-                                                <button class="menu-item" onclick="openActionModal('remove_admin', {{ $user->id }}, '{{ $safeName }}')">
+                                                <button type="button" class="menu-item" onclick="openActionModal('remove_admin', {{ $user->id }}, '{{ $safeName }}')">
                                                     <i class="fa-solid fa-user-minus"></i>
                                                     Retirer les droits admin
                                                 </button>
                                             @endif
 
-                                            <button class="menu-item" onclick="openActionModal('verify_email', {{ $user->id }}, '{{ $safeName }}')">
+                                            <button type="button" class="menu-item" onclick="openActionModal('verify_email', {{ $user->id }}, '{{ $safeName }}')">
                                                 <i class="fa-solid fa-envelope-circle-check"></i>
                                                 Vérifier l’email
                                             </button>
 
-                                            <button class="menu-item" onclick="openActionModal('otp_bypass', {{ $user->id }}, '{{ $safeName }}', '{{ $user->otp_bypass ? 'desactiver' : 'activer' }}')">
+                                            <button type="button" class="menu-item" onclick="openActionModal('otp_bypass', {{ $user->id }}, '{{ $safeName }}', '{{ ($user->otp_bypass ?? false) ? 'desactiver' : 'activer' }}')">
                                                 <i class="fa-solid fa-key"></i>
-                                                {{ $user->otp_bypass ? 'Désactiver OTP bypass' : 'Activer OTP bypass' }}
+                                                {{ ($user->otp_bypass ?? false) ? 'Désactiver OTP bypass' : 'Activer OTP bypass' }}
                                             </button>
 
                                             <div class="menu-divider"></div>
 
-                                            <button class="menu-item danger" onclick="openActionModal('ban', {{ $user->id }}, '{{ $safeName }}')">
+                                            <button type="button" class="menu-item danger" onclick="openActionModal('ban', {{ $user->id }}, '{{ $safeName }}')">
                                                 <i class="fa-solid fa-ban"></i>
                                                 Bannir l’utilisateur
                                             </button>
 
-                                            @if($user->last_login_ip)
-                                                <button class="menu-item danger" onclick="openActionModal('ban_ip', {{ $user->id }}, '{{ $safeName }}', '{{ $safeIp }}')">
+                                            @if($user->last_login_ip ?? false)
+                                                <button type="button" class="menu-item danger" onclick="openActionModal('ban_ip', {{ $user->id }}, '{{ $safeName }}', '{{ $safeIp }}')">
                                                     <i class="fa-solid fa-globe"></i>
                                                     Bloquer l’IP
                                                 </button>
+                                            @endif
+
+                                            @if($user->id !== auth()->id())
+                                                <form method="POST"
+                                                      action="{{ route('admin.security.users.destroy', $user) }}"
+                                                      onsubmit="return confirm('Supprimer définitivement cet utilisateur ?');">
+                                                    @csrf
+                                                    @method('DELETE')
+
+                                                    <button type="submit" class="menu-item danger">
+                                                        <i class="fa-regular fa-trash-can"></i>
+                                                        Supprimer définitivement
+                                                    </button>
+                                                </form>
                                             @endif
                                         </div>
                                     </div>
@@ -1015,7 +898,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6">
+                                <td colspan="7">
                                     <div class="empty-state">
                                         <i class="fa-solid fa-user-slash"></i>
                                         <div style="font-weight:950;color:#334155;">Aucun utilisateur trouvé</div>
@@ -1032,7 +915,6 @@
                 {{ $users->onEachSide(1)->links() }}
             </div>
         </section>
-
     </div>
 </div>
 
@@ -1100,7 +982,7 @@
         current.classList.toggle('active');
     }
 
-    document.addEventListener('click', function (event) {
+    document.addEventListener('click', function(event) {
         if (!event.target.closest('.action-menu')) {
             document.querySelectorAll('.action-menu').forEach(menu => {
                 menu.classList.remove('active');
@@ -1220,11 +1102,21 @@
         resetModal();
     }
 
-    modal.addEventListener('click', function (event) {
+    modal.addEventListener('click', function(event) {
         if (event.target === modal) {
             closeModal();
         }
     });
+
+    const checkAllUsers = document.getElementById('checkAllUsers');
+
+    if (checkAllUsers) {
+        checkAllUsers.addEventListener('change', function() {
+            document.querySelectorAll('.user-checkbox').forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+    }
 </script>
 
 @endsection
