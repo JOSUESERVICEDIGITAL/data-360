@@ -246,14 +246,23 @@ class DataRocketEngineService
             'statut' => $statut,
             'message' => $message,
             'resultat' => [
-                'adresse' => $geo,
-                'cadastre' => $cadastre,
-                'rnb' => $rnb,
-                'batiments' => collect($batiments)->map->toArray(),
-                'coproprietes' => collect($coproprietes)->map->toArray(),
-                'syndics' => collect($syndics)->map->toArray(),
-                'proprietaires_bdnb' => $proprietairesBdnb,
-                'qpv' => $qpvChecks,
+                'adresse' => [
+                    'adresse_complete' => $geo['adresse_complete'] ?? null,
+                    'ville' => $geo['ville'] ?? null,
+                    'code_postal' => $geo['code_postal'] ?? null,
+                ],
+
+                'resume' => [
+                    'batiments' => count($batiments),
+                    'coproprietes' => count($coproprietes),
+                    'syndics' => count($syndics),
+                    'proprietaires' => count($proprietairesBdnb),
+                ],
+
+                'eligibilite' => [
+                    'eligible' => $qpvChecks['eligible'] ?? null,
+                    'message' => $qpvChecks['message'] ?? null,
+                ],
             ],
         ]);
 
@@ -390,45 +399,45 @@ class DataRocketEngineService
             ->toArray();
     }
 
-   private function enrichProprietairesWithRne(array $proprietaires): array
-{
-    return collect($proprietaires)
-        ->map(function ($item) {
-            $rne = null;
+    private function enrichProprietairesWithRne(array $proprietaires): array
+    {
+        return collect($proprietaires)
+            ->map(function ($item) {
+                $rne = null;
 
-            if (!empty($item['siren']) && strlen($item['siren']) === 9) {
-                $rne = RneEntreprise::where('siren', $item['siren'])->first();
-            }
+                if (!empty($item['siren']) && strlen($item['siren']) === 9) {
+                    $rne = RneEntreprise::where('siren', $item['siren'])->first();
+                }
 
-            return [
-                'nom' => $rne?->denomination ?? $item['nom'] ?? null,
-                'nom_bdnb' => $item['nom'] ?? null,
-                'siren' => $item['siren'] ?? null,
+                return [
+                    'nom' => $rne?->denomination ?? $item['nom'] ?? null,
+                    'nom_bdnb' => $item['nom'] ?? null,
+                    'siren' => $item['siren'] ?? null,
 
-                'siret' => $rne?->siret_siege,
-                'forme_juridique' => $rne?->forme_juridique,
-                'activite' => $rne?->activite,
+                    'siret' => $rne?->siret_siege,
+                    'forme_juridique' => $rne?->forme_juridique,
+                    'activite' => $rne?->activite,
 
-                'capital_social' => $rne?->capital_formatted ?? $rne?->capital_social,
-                'capital_social_numeric' => $rne?->capital_social_numeric,
+                    'capital_social' => $rne?->capital_formatted ?? $rne?->capital_social,
+                    'capital_social_numeric' => $rne?->capital_social_numeric,
 
-                'chiffre_affaires' => null,
-                'resultat' => null,
-                'effectif' => null,
+                    'chiffre_affaires' => null,
+                    'resultat' => null,
+                    'effectif' => null,
 
-                'date_creation' => optional($rne?->date_creation)->format('Y-m-d'),
+                    'date_creation' => optional($rne?->date_creation)->format('Y-m-d'),
 
-                'dirigeant_principal' => data_get($rne?->dirigeants, '0.nom')
-                    ?? data_get($rne?->dirigeants, '0.prenoms')
-                    ?? null,
+                    'dirigeant_principal' => data_get($rne?->dirigeants, '0.nom')
+                        ?? data_get($rne?->dirigeants, '0.prenoms')
+                        ?? null,
 
-                'url_pappers' => null,
-                'raw_data' => $rne?->raw_data,
-            ];
-        })
-        ->values()
-        ->toArray();
-}
+                    'url_pappers' => null,
+                    'raw_data' => $rne?->raw_data,
+                ];
+            })
+            ->values()
+            ->toArray();
+    }
 
     private function selectMainBuildings(array $batiments): array
     {
