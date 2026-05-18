@@ -9,7 +9,7 @@ use App\Http\Controllers\Back\SyndicController;
 use App\Http\Controllers\Back\RechercheController;
 use App\Http\Controllers\Back\ImportCsvController;
 use App\Http\Controllers\Back\NotificationController;
-
+use App\Http\Controllers\Back\MaintenanceController;
 
 Route::middleware(['auth', 'verified', 'is_admin'])
     ->prefix('back')
@@ -115,6 +115,17 @@ Route::middleware(['auth', 'verified', 'is_admin'])
 
         //  // Route API pour fetch les notifications (dans routes/web.php ou api.php)
 
+
+
+
+
+        // routes/back.php
+        Route::prefix('maintenance')->name('maintenance.')->group(function () {
+            Route::get('/', [MaintenanceController::class, 'index'])->name('index');
+            Route::delete('/recherches', [MaintenanceController::class, 'clearRecherches'])->name('recherches.clear');
+            Route::delete('/cache', [MaintenanceController::class, 'clearCache'])->name('cache.clear');
+            Route::delete('/jobs', [MaintenanceController::class, 'clearJobs'])->name('jobs.clear');
+        });
     });
 
 Route::get('/api/notifications/unread', [NotificationController::class, 'fetchUnread'])->name('api.notifications.unread');
