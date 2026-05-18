@@ -50,12 +50,21 @@ class AdresseController extends Controller
             ->with('success', 'Adresse mise à jour avec succès.');
     }
 
-    public function destroy(Adresse $adresse)
+    public function destroy(\App\Models\Back\Adresse $adresse)
     {
         $adresse->delete();
 
         return redirect()
             ->route('back.adresses.index')
             ->with('success', 'Adresse supprimée avec succès.');
+    }
+
+    public function reset()
+    {
+        \App\Models\Back\Adresse::query()->delete();
+
+        return redirect()
+            ->route('back.adresses.index')
+            ->with('success', 'Toutes les adresses ont été supprimées.');
     }
 }

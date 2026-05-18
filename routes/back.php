@@ -23,6 +23,8 @@ Route::middleware(['auth', 'verified', 'is_admin'])
         Route::get('adresses/{adresse}/edit', [AdresseController::class, 'edit'])->name('adresses.edit');
         Route::put('adresses/{adresse}', [AdresseController::class, 'update'])->name('adresses.update');
         Route::delete('adresses/{adresse}', [AdresseController::class, 'destroy'])->name('adresses.destroy');
+        Route::delete('/adresses/reset', [AdresseController::class, 'reset'])
+            ->name('back.adresses.reset');
 
         Route::get('batiments', [BatimentController::class, 'index'])->name('batiments.index');
         Route::get('batiments/create', [BatimentController::class, 'create'])->name('batiments.create');
@@ -73,8 +75,7 @@ Route::middleware(['auth', 'verified', 'is_admin'])
         });
 
         //  // Route API pour fetch les notifications (dans routes/web.php ou api.php)
-    
+
     });
 
 Route::get('/api/notifications/unread', [NotificationController::class, 'fetchUnread'])->name('api.notifications.unread');
-
