@@ -16,23 +16,25 @@ Route::middleware(['auth', 'verified', 'is_admin'])
     ->name('back.')
     ->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-        Route::get('adresses', [AdresseController::class, 'index'])->name('adresses.index');
-        Route::get('adresses/create', [AdresseController::class, 'create'])->name('adresses.create');
-        Route::post('adresses', [AdresseController::class, 'store'])->name('adresses.store');
-        Route::get('adresses/{adresse}', [AdresseController::class, 'show'])->name('adresses.show');
-        Route::get('adresses/{adresse}/edit', [AdresseController::class, 'edit'])->name('adresses.edit');
-        Route::put('adresses/{adresse}', [AdresseController::class, 'update'])->name('adresses.update');
-        Route::delete('adresses/{adresse}', [AdresseController::class, 'destroy'])->name('adresses.destroy');
-        Route::delete('/adresses/reset', [AdresseController::class, 'reset'])
-            ->name('back.adresses.reset');
+       
+    // =========================
+        // ADRESSES
+        // =========================
+        Route::delete('adresses/reset/all', [AdresseController::class, 'reset'])
+            ->name('adresses.reset');
 
-        Route::get('batiments', [BatimentController::class, 'index'])->name('batiments.index');
-        Route::get('batiments/create', [BatimentController::class, 'create'])->name('batiments.create');
-        Route::post('batiments', [BatimentController::class, 'store'])->name('batiments.store');
-        Route::get('batiments/{batiment}', [BatimentController::class, 'show'])->name('batiments.show');
-        Route::get('batiments/{batiment}/edit', [BatimentController::class, 'edit'])->name('batiments.edit');
-        Route::put('batiments/{batiment}', [BatimentController::class, 'update'])->name('batiments.update');
-        Route::delete('batiments/{batiment}', [BatimentController::class, 'destroy'])->name('batiments.destroy');
+        Route::resource('adresses', AdresseController::class);
+
+
+        // =========================
+        // BÂTIMENTS
+        // =========================
+        Route::delete('batiments/reset/all', [BatimentController::class, 'reset'])
+            ->name('batiments.reset');
+
+        Route::resource('batiments', BatimentController::class);
+
+
 
         Route::get('coproprietes', [CoproprieteController::class, 'index'])->name('coproprietes.index');
         Route::get('coproprietes/create', [CoproprieteController::class, 'create'])->name('coproprietes.create');

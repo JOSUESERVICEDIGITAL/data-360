@@ -57,12 +57,21 @@ class BatimentController extends Controller
             ->with('success', 'Bâtiment mis à jour avec succès.');
     }
 
-    public function destroy(Batiment $batiment)
+    public function destroy(\App\Models\Back\Batiment $batiment)
     {
         $batiment->delete();
 
         return redirect()
             ->route('back.batiments.index')
             ->with('success', 'Bâtiment supprimé avec succès.');
+    }
+
+    public function reset()
+    {
+        \App\Models\Back\Batiment::query()->delete();
+
+        return redirect()
+            ->route('back.batiments.index')
+            ->with('success', 'Tous les bâtiments ont été supprimés.');
     }
 }
