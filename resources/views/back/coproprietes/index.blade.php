@@ -5,7 +5,7 @@
 @section('content')
 <div class="card-header">
     <h1>Copropriétés</h1>
-    <a href="{{ route('back.coproprietes.create') }}" class="btn-primary">Ajouter</a>
+    <a href="{{ route('back.coproprietes.create') }}" class="btn-primary">Ajouter </a>
 </div>
 
 <div class="card">
@@ -38,7 +38,6 @@
         @endforelse
         </tbody>
     </table>
-
     {{ $coproprietes->links() }}
 </div>
 @endsection
