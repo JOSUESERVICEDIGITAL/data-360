@@ -24,48 +24,182 @@
         $statusClass = 'free';
         $statusIcon = 'fa-user';
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications Front
+    |--------------------------------------------------------------------------
+    */
+    $frontNotifications = collect();
+
+    if ($user) {
+        $frontNotifications = \App\Models\Back\Notification::query()
+            ->where(function ($q) use ($user) {
+                $q->whereNull('user_id')
+                  ->orWhere('user_id', $user->id);
+            })
+            ->latest()
+            ->take(6)
+            ->get();
+    }
+
+    $unreadNotificationsCount = $frontNotifications
+        ->where('is_read', false)
+        ->count();
 @endphp
 
 <header class="header">
     <div class="container header-inner">
 
         <a href="{{ route('front.home') }}" class="logo" aria-label="Data Rocket - Accueil">
-            <img src="{{ asset('assets/img/360data.jpeg') }}" alt="Data Rocket" class="logo-img" loading="lazy">
+            <img
+                src="{{ asset('assets/img/360data.jpeg') }}"
+                alt="Data Rocket"
+                class="logo-img"
+                loading="lazy"
+            >
         </a>
 
-        <button class="mobile-btn" id="mobileBtn" aria-label="Menu" aria-expanded="false" type="button">
+        <button
+            class="mobile-btn"
+            id="mobileBtn"
+            aria-label="Menu"
+            aria-expanded="false"
+            type="button"
+        >
             <i class="fa-solid fa-bars"></i>
             <i class="fa-solid fa-xmark close-icon"></i>
         </button>
 
         <nav class="nav" id="nav" aria-label="Navigation principale">
+
             <a href="{{ route('front.home') }}#carte" class="nav-link">
                 <i class="fa-solid fa-map"></i>
                 <span>Carte</span>
             </a>
 
             @auth
-                <a href="{{ route('dashboard') }}" class="credits-circle {{ $statusClass }}" id="creditsCircle" title="Mon statut et mes crédits">
+
+                {{-- =========================
+                    NOTIFICATIONS FRONT
+                ========================== --}}
+                @if($frontNotifications->count() > 0)
+
+                    <div class="front-notifications">
+
+                        <button
+                            class="front-notif-btn"
+                            id="frontNotifBtn"
+                            type="button"
+                        >
+                            <i class="fa-regular fa-bell"></i>
+
+                            @if($unreadNotificationsCount > 0)
+                                <span class="front-notif-badge">
+                                    {{ $unreadNotificationsCount > 9 ? '9+' : $unreadNotificationsCount }}
+                                </span>
+                            @endif
+                        </button>
+
+                        <div class="front-notif-dropdown" id="frontNotifDropdown">
+
+                            <div class="front-notif-header">
+                                <span>Notifications</span>
+                            </div>
+
+                            <div class="front-notif-list">
+
+                                @foreach($frontNotifications as $notif)
+
+                                    @php
+                                        $notifType = \App\Models\Back\Notification::types()[$notif->type]
+                                            ?? \App\Models\Back\Notification::types()['info'];
+                                    @endphp
+
+                                    <div class="front-notif-item {{ !$notif->is_read ? 'unread' : '' }}">
+
+                                        <div class="front-notif-icon">
+                                            <i
+                                                class="{{ $notif->icon ?? $notifType['icon'] }}"
+                                                style="color: {{ $notifType['color'] }};"
+                                            ></i>
+                                        </div>
+
+                                        <div class="front-notif-content">
+
+                                            <div class="front-notif-title">
+                                                {{ $notif->title }}
+                                            </div>
+
+                                            <div class="front-notif-message">
+                                                {{ $notif->message }}
+                                            </div>
+
+                                            <div class="front-notif-time">
+                                                {{ $notif->created_at->diffForHumans() }}
+                                            </div>
+
+                                        </div>
+
+                                        @if($notif->link)
+                                            <a
+                                                href="{{ $notif->link }}"
+                                                class="front-notif-overlay-link"
+                                            ></a>
+                                        @endif
+
+                                    </div>
+
+                                @endforeach
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                @endif
+
+                {{-- =========================
+                    CERCLE CREDITS
+                ========================== --}}
+                <a
+                    href="{{ route('dashboard') }}"
+                    class="credits-circle {{ $statusClass }}"
+                    id="creditsCircle"
+                    title="Mon statut et mes crédits"
+                >
+
                     <div class="circle-inner">
 
                         <div class="circle-half circle-status">
                             <span class="status-icon">
                                 <i class="fa-solid {{ $statusIcon }}"></i>
                             </span>
-                            <span class="status-mini-label">{{ $statusLabel }}</span>
+
+                            <span class="status-mini-label">
+                                {{ $statusLabel }}
+                            </span>
                         </div>
 
                         <div class="circle-divider"></div>
 
                         <div class="circle-half circle-credits">
-                            <span class="credits-value" id="userCredits">{{ $credits }}</span>
-                            <span class="credits-mini-label">crédits</span>
+                            <span class="credits-value" id="userCredits">
+                                {{ $credits }}
+                            </span>
+
+                            <span class="credits-mini-label">
+                                crédits
+                            </span>
                         </div>
 
                     </div>
 
                     <div class="circle-tooltip" id="creditsTooltip">
+
                         <div class="tooltip-content">
+
                             <div class="tooltip-title">
                                 <i class="fa-solid fa-wallet"></i>
                                 Mon compte
@@ -73,6 +207,7 @@
 
                             <div class="tooltip-row">
                                 <span>Statut</span>
+
                                 <strong>
                                     <i class="fa-solid {{ $statusIcon }}"></i>
                                     {{ $statusLabel }}
@@ -81,33 +216,56 @@
 
                             <div class="tooltip-row">
                                 <span>Crédits restants</span>
-                                <strong id="tooltipCredits">{{ $credits }}</strong>
+
+                                <strong id="tooltipCredits">
+                                    {{ $credits }}
+                                </strong>
                             </div>
 
                             @if(!$isAdmin)
+
                                 @if(Route::has('front.credits.buy'))
-                                    <a href="{{ route('front.credits.buy') }}" class="tooltip-buy-link">
+
+                                    <a
+                                        href="{{ route('front.credits.buy') }}"
+                                        class="tooltip-buy-link"
+                                    >
                                         <i class="fa-solid fa-cart-shopping"></i>
                                         Acheter des crédits
                                     </a>
+
                                 @else
-                                    <a href="{{ route('dashboard') }}" class="tooltip-buy-link">
+
+                                    <a
+                                        href="{{ route('dashboard') }}"
+                                        class="tooltip-buy-link"
+                                    >
                                         <i class="fa-solid fa-coins"></i>
                                         Voir mes crédits
                                     </a>
+
                                 @endif
+
                             @else
-                                <a href="{{ route('admin.security.users.index') }}" class="tooltip-buy-link">
+
+                                <a
+                                    href="{{ route('admin.security.users.index') }}"
+                                    class="tooltip-buy-link"
+                                >
                                     <i class="fa-solid fa-shield-halved"></i>
                                     Gestion utilisateurs
                                 </a>
+
                             @endif
+
                         </div>
+
                     </div>
+
                 </a>
-            @else
-               
+
             @endauth
+
         </nav>
     </div>
 </header>
@@ -161,7 +319,7 @@
         display: flex;
         align-items: center;
         justify-content: flex-end;
-        gap: 1.2rem;
+        gap: 1rem;
     }
 
     .nav-link {
@@ -174,16 +332,8 @@
         font-weight: 700;
         border-radius: 48px;
         transition: all 0.2s ease;
-        background: transparent;
-        border: none;
-        cursor: pointer;
         font-size: 0.95rem;
         white-space: nowrap;
-    }
-
-    .nav-link i {
-        font-size: 1.05rem;
-        transition: transform 0.2s ease;
     }
 
     .nav-link:hover {
@@ -191,9 +341,153 @@
         color: #0053b3;
     }
 
-    .nav-link:hover i {
-        transform: translateY(-2px);
+    /*
+    |--------------------------------------------------------------------------
+    | NOTIFICATIONS FRONT
+    |--------------------------------------------------------------------------
+    */
+
+    .front-notifications {
+        position: relative;
     }
+
+    .front-notif-btn {
+        position: relative;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        border: none;
+        background: white;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        color: #0053b3;
+        font-size: 1.15rem;
+    }
+
+    .front-notif-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 30px rgba(0, 83, 179, 0.22);
+    }
+
+    .front-notif-badge {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: white;
+        font-size: 0.72rem;
+        font-weight: 900;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid white;
+    }
+
+    .front-notif-dropdown {
+        position: absolute;
+        top: calc(100% + 14px);
+        right: 0;
+        width: 360px;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 55px rgba(15, 23, 42, 0.18);
+        border: 1px solid #e2e8f0;
+        overflow: hidden;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-10px);
+        transition: all 0.25s ease;
+        z-index: 1200;
+    }
+
+    .front-notifications.active .front-notif-dropdown {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+
+    .front-notif-header {
+        padding: 1rem 1.1rem;
+        border-bottom: 1px solid #e2e8f0;
+        font-weight: 900;
+        color: #0f172a;
+        background: #f8fafc;
+    }
+
+    .front-notif-list {
+        max-height: 420px;
+        overflow-y: auto;
+    }
+
+    .front-notif-item {
+        position: relative;
+        display: flex;
+        gap: 0.9rem;
+        padding: 1rem;
+        border-bottom: 1px solid #f1f5f9;
+        transition: background 0.2s ease;
+    }
+
+    .front-notif-item:hover {
+        background: #f8fafc;
+    }
+
+    .front-notif-item.unread {
+        background: #eff6ff;
+    }
+
+    .front-notif-icon {
+        width: 42px;
+        height: 42px;
+        min-width: 42px;
+        border-radius: 50%;
+        background: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(15,23,42,.08);
+        font-size: 1rem;
+    }
+
+    .front-notif-content {
+        flex: 1;
+    }
+
+    .front-notif-title {
+        font-size: 0.9rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 4px;
+    }
+
+    .front-notif-message {
+        font-size: 0.78rem;
+        line-height: 1.45;
+        color: #64748b;
+    }
+
+    .front-notif-time {
+        margin-top: 8px;
+        font-size: 0.7rem;
+        color: #94a3b8;
+    }
+
+    .front-notif-overlay-link {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CERCLE CREDITS
+    |--------------------------------------------------------------------------
+    */
 
     .credits-circle {
         position: relative;
@@ -243,7 +537,6 @@
     .circle-credits {
         bottom: 0;
         flex-direction: column;
-        gap: 0;
         background: #f8fafc;
         color: #0053b3;
     }
@@ -258,17 +551,14 @@
         z-index: 3;
         transform: translateY(-50%);
         border-radius: 999px;
-        box-shadow: 0 1px 0 rgba(15,23,42,.08);
     }
 
     .status-icon {
         font-size: 1rem;
-        line-height: 1;
     }
 
     .status-mini-label {
         font-size: 0.53rem;
-        line-height: 1;
         text-transform: uppercase;
         letter-spacing: .04em;
         font-weight: 950;
@@ -277,12 +567,10 @@
     .credits-value {
         font-size: 1.1rem;
         font-weight: 950;
-        line-height: 1;
     }
 
     .credits-mini-label {
         font-size: 0.48rem;
-        line-height: 1;
         text-transform: uppercase;
         letter-spacing: .04em;
         color: #64748b;
@@ -343,21 +631,7 @@
         z-index: 100;
     }
 
-    .circle-tooltip::before {
-        content: "";
-        position: absolute;
-        top: -7px;
-        right: 26px;
-        width: 14px;
-        height: 14px;
-        background: white;
-        border-left: 1px solid #e2e8f0;
-        border-top: 1px solid #e2e8f0;
-        transform: rotate(45deg);
-    }
-
-    .credits-circle:hover .circle-tooltip,
-    .credits-circle:focus-within .circle-tooltip {
+    .credits-circle:hover .circle-tooltip {
         opacity: 1;
         visibility: visible;
         transform: translateY(0);
@@ -385,8 +659,6 @@
         justify-content: space-between;
         align-items: center;
         font-size: 0.8rem;
-        gap: 1rem;
-        white-space: nowrap;
         color: #64748b;
     }
 
@@ -416,45 +688,17 @@
 
     .tooltip-buy-link:hover {
         background: #003d85;
-        transform: translateY(-1px);
         color: white;
     }
 
     .mobile-btn {
         display: none;
-        background: none;
-        border: none;
-        font-size: 1.8rem;
-        cursor: pointer;
-        color: #0053b3;
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        transition: all 0.2s ease;
-        position: relative;
-        z-index: 1001;
-    }
-
-    .mobile-btn:hover {
-        background: #f1f5f9;
-    }
-
-    .close-icon {
-        display: none;
-    }
-
-    .mobile-btn.active .fa-bars {
-        display: none;
-    }
-
-    .mobile-btn.active .close-icon {
-        display: inline-block;
     }
 
     @media (max-width: 768px) {
+
         .header-inner {
             padding: 0.75rem 1rem;
-            gap: 1rem;
         }
 
         .logo-img {
@@ -465,6 +709,10 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            background: none;
+            border: none;
+            font-size: 1.8rem;
+            color: #0053b3;
         }
 
         .nav {
@@ -479,9 +727,8 @@
             align-items: stretch;
             justify-content: flex-start;
             padding: 5.2rem 1.5rem 2rem;
-            gap: 0.9rem;
-            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: -5px 0 30px rgba(0, 0, 0, 0.1);
+            gap: 1rem;
+            transition: right 0.3s ease;
             z-index: 999;
         }
 
@@ -489,17 +736,13 @@
             right: 0;
         }
 
-        .nav-link {
+        .front-notif-dropdown {
             width: 100%;
-            justify-content: flex-start;
-            padding: 0.9rem 1.2rem;
-            font-size: 1rem;
-            background: #f8fafc;
+            right: auto;
+            left: 0;
         }
 
         .credits-circle {
-            width: 74px;
-            height: 74px;
             margin: 0 auto;
         }
 
@@ -508,70 +751,29 @@
             opacity: 1;
             visibility: visible;
             transform: none;
-            min-width: 100%;
             margin-top: 14px;
-            display: block;
-        }
-
-        .circle-tooltip::before {
-            display: none;
-        }
-
-        .nav-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(2px);
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-            z-index: 998;
-        }
-
-        .nav-overlay.active {
-            opacity: 1;
-            visibility: visible;
-        }
-    }
-
-    @media (min-width: 769px) {
-        .nav {
-            position: static !important;
-            width: auto !important;
-            height: auto !important;
-            background: none !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-            flex-direction: row !important;
         }
     }
 </style>
 
 <script>
     (function () {
+
         const mobileBtn = document.getElementById('mobileBtn');
         const nav = document.getElementById('nav');
         const header = document.querySelector('.header');
 
-        let overlay = document.querySelector('.nav-overlay');
+        const notifBtn = document.getElementById('frontNotifBtn');
+        const notifWrapper = document.querySelector('.front-notifications');
 
-        function ensureOverlay() {
-            overlay = document.querySelector('.nav-overlay');
-
-            if (!overlay && window.innerWidth <= 768) {
-                overlay = document.createElement('div');
-                overlay.className = 'nav-overlay';
-                document.body.appendChild(overlay);
-                overlay.addEventListener('click', () => toggleMenu(false));
-            }
-        }
-
-        ensureOverlay();
+        /*
+        |--------------------------------------------------------------------------
+        | HEADER SCROLL
+        |--------------------------------------------------------------------------
+        */
 
         window.addEventListener('scroll', () => {
+
             if (!header) return;
 
             if (window.scrollY > 50) {
@@ -581,70 +783,59 @@
             }
         });
 
-        function toggleMenu(force) {
-            if (!nav || !mobileBtn) return;
-
-            const isOpen = force !== undefined ? force : !nav.classList.contains('active');
-
-            if (isOpen) {
-                nav.classList.add('active');
-                mobileBtn.classList.add('active');
-                ensureOverlay();
-
-                if (overlay) {
-                    overlay.classList.add('active');
-                }
-
-                document.body.style.overflow = 'hidden';
-                mobileBtn.setAttribute('aria-expanded', 'true');
-            } else {
-                nav.classList.remove('active');
-                mobileBtn.classList.remove('active');
-
-                if (overlay) {
-                    overlay.classList.remove('active');
-                }
-
-                document.body.style.overflow = '';
-                mobileBtn.setAttribute('aria-expanded', 'false');
-            }
-        }
+        /*
+        |--------------------------------------------------------------------------
+        | MOBILE MENU
+        |--------------------------------------------------------------------------
+        */
 
         if (mobileBtn) {
-            mobileBtn.addEventListener('click', () => toggleMenu());
+
+            mobileBtn.addEventListener('click', function () {
+
+                nav.classList.toggle('active');
+
+            });
+
         }
 
-        let resizeTimer;
+        /*
+        |--------------------------------------------------------------------------
+        | NOTIFICATIONS DROPDOWN
+        |--------------------------------------------------------------------------
+        */
 
-        window.addEventListener('resize', function () {
-            clearTimeout(resizeTimer);
+        if (notifBtn && notifWrapper) {
 
-            resizeTimer = setTimeout(function () {
-                if (window.innerWidth > 768) {
-                    toggleMenu(false);
+            notifBtn.addEventListener('click', function (e) {
 
-                    const existingOverlay = document.querySelector('.nav-overlay');
-                    if (existingOverlay) {
-                        existingOverlay.remove();
-                    }
+                e.preventDefault();
+                e.stopPropagation();
 
-                    overlay = null;
-                } else {
-                    ensureOverlay();
-                }
-            }, 120);
-        });
+                notifWrapper.classList.toggle('active');
 
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', () => {
-                if (window.innerWidth <= 768) {
-                    toggleMenu(false);
-                }
             });
-        });
+
+            document.addEventListener('click', function (e) {
+
+                if (!notifWrapper.contains(e.target)) {
+                    notifWrapper.classList.remove('active');
+                }
+
+            });
+
+        }
+
     })();
 
+    /*
+    |--------------------------------------------------------------------------
+    | UPDATE CREDITS LIVE
+    |--------------------------------------------------------------------------
+    */
+
     function updateUserCredits(newCredits) {
+
         const creditsElement = document.getElementById('userCredits');
         const tooltipCredits = document.getElementById('tooltipCredits');
 
@@ -655,5 +846,6 @@
         if (tooltipCredits) {
             tooltipCredits.textContent = newCredits;
         }
+
     }
 </script>
