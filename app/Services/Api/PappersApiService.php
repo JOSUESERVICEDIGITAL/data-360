@@ -131,24 +131,22 @@ class PappersApiService
 {
     $capital = $json['capital']
         ?? $json['capital_social']
-        ?? $json['capital_actuel_si_variable']
-        ?? $json['capital_formate']
         ?? data_get($json, 'details.capital');
 
-    if (!$capital) {
-        $capital = collect($json['publications_bodacc'] ?? [])
-            ->filter(fn ($publication) => !empty($publication['capital']))
-            ->sortByDesc(fn ($publication) => $publication['date'] ?? '')
-            ->pluck('capital')
-            ->first();
+    // Si le capital est en centimes (ex: 1000000 pour 10 000€)
+    if (is_numeric($capital) && $capital > 10000 && $capital < 100000000) {
+        // déjà en euros, pas de division
+    } elseif (is_numeric($capital) && $capital > 100000000) {
+        $capital = $capital / 100;
     }
 
-    if (!$capital) {
-        $capital = collect($json['publications_bodacc'] ?? [])
-            ->filter(fn ($publication) => !empty($publication['description']))
-            ->map(fn ($publication) => $this->extractCapitalFromText($publication['description']))
-            ->filter()
-            ->first();
+    if (!$capital && !empty($json['publications_bodacc'])) {
+        foreach ($json['publications_bodacc'] as $pub) {
+            if (!empty($pub['capital'])) {
+                $capital = $pub['capital'];
+                break;
+            }
+        }
     }
 
     return $this->formatMoney($capital);

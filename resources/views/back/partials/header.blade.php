@@ -1,23 +1,23 @@
 @php
-    $authUser = auth()->user();
-    $isAdmin = $authUser && (bool) $authUser->is_admin;
+$authUser = auth()->user();
+$isAdmin = $authUser && (bool) $authUser->is_admin;
 @endphp
 @php
-    $unreadNotificationsCount = 0;
-    $recentNotifications = collect();
+$unreadNotificationsCount = 0;
+$recentNotifications = collect();
 
-    if (auth()->check()) {
-        $unreadNotificationsCount = App\Models\Back\Notification::forUser(auth()->id())
-            ->notExpired()
-            ->unread()
-            ->count();
+if (auth()->check()) {
+$unreadNotificationsCount = App\Models\Back\Notification::forUser(auth()->id())
+->notExpired()
+->unread()
+->count();
 
-        $recentNotifications = App\Models\Back\Notification::forUser(auth()->id())
-            ->notExpired()
-            ->orderBy('created_at', 'desc')
-            ->limit(5)
-            ->get();
-    }
+$recentNotifications = App\Models\Back\Notification::forUser(auth()->id())
+->notExpired()
+->orderBy('created_at', 'desc')
+->limit(5)
+->get();
+}
 @endphp
 
 <header class="admin-header">
@@ -30,10 +30,12 @@
                 </div>
 
                 <div class="brand-text">
-                    <strong>Data Rocket</strong>
-                    <span class="brand-badge">
-                        {{ $isAdmin ? 'Back Office' : 'Espace utilisateur' }}
-                    </span>
+                    <a href="{{ route('front.home') }}" style="text-decoration: none; color: inherit;">
+                        <strong>Data-360</strong>
+                        <span class="brand-badge">
+                            {{ $isAdmin ? 'Back Office' : 'Espace utilisateur' }}
+                        </span>
+                    </a>
                 </div>
             </a>
         </div>
@@ -45,21 +47,21 @@
         <div class="header-right" id="headerRight">
             <div class="header-actions">
                 @auth
-                    @php $isAdmin = auth()->user()->is_admin; @endphp
+                @php $isAdmin = auth()->user()->is_admin; @endphp
 
-                    @if($isAdmin)
-                        <button class="action-btn" onclick="window.location.href='{{ route('admin.security.users.create') }}'"
-                            title="Ajouter un utilisateur" type="button">
-                            <i class="fa-solid fa-user-plus"></i>
-                        </button>
+                @if($isAdmin)
+                <button class="action-btn" onclick="window.location.href='{{ route('admin.security.users.create') }}'"
+                    title="Ajouter un utilisateur" type="button">
+                    <i class="fa-solid fa-user-plus"></i>
+                </button>
 
-                        @if(Route::has('back.imports.create'))
-                            <button class="action-btn" onclick="window.location.href='{{ route('back.imports.create') }}'"
-                                title="Importer des données" type="button">
-                                <i class="fa-solid fa-upload"></i>
-                            </button>
-                        @endif
-                    @endif
+                @if(Route::has('back.imports.create'))
+                <button class="action-btn" onclick="window.location.href='{{ route('back.imports.create') }}'"
+                    title="Importer des données" type="button">
+                    <i class="fa-solid fa-upload"></i>
+                </button>
+                @endif
+                @endif
                 @endauth
             </div>
 
@@ -67,8 +69,8 @@
                 <button class="notif-btn" id="notifBtn" type="button">
                     <i class="fa-regular fa-bell"></i>
                     @if($unreadNotificationsCount > 0)
-                        <span
-                            class="notif-badge">{{ $unreadNotificationsCount > 9 ? '9+' : $unreadNotificationsCount }}</span>
+                    <span
+                        class="notif-badge">{{ $unreadNotificationsCount > 9 ? '9+' : $unreadNotificationsCount }}</span>
                     @endif
                 </button>
 
@@ -80,26 +82,26 @@
 
                     <div class="notif-list" id="notifList">
                         @if($recentNotifications->isEmpty())
-                            <div class="notif-empty">
-                                <i class="fa-regular fa-bell-slash"></i>
-                                <p>Aucune notification</p>
-                            </div>
+                        <div class="notif-empty">
+                            <i class="fa-regular fa-bell-slash"></i>
+                            <p>Aucune notification</p>
+                        </div>
                         @else
-                            @foreach($recentNotifications as $notif)
-                                @php $typeInfo = \App\Models\Back\Notification::types()[$notif->type] ?? \App\Models\Back\Notification::types()['info']; @endphp
-                                <div class="notif-item {{ !$notif->is_read ? 'unread' : '' }}" data-id="{{ $notif->id }}">
-                                    <i class="{{ $notif->icon ?? $typeInfo['icon'] }}"
-                                        style="color: {{ $typeInfo['color'] }};"></i>
-                                    <div>
-                                        <p>{{ $notif->title }}</p>
-                                        <small>{{ $notif->message }}</small>
-                                        <span class="notif-time">{{ $notif->created_at->diffForHumans() }}</span>
-                                    </div>
-                                    @if($notif->link)
-                                        <a href="{{ $notif->link }}" class="notif-link"></a>
-                                    @endif
-                                </div>
-                            @endforeach
+                        @foreach($recentNotifications as $notif)
+                        @php $typeInfo = \App\Models\Back\Notification::types()[$notif->type] ?? \App\Models\Back\Notification::types()['info']; @endphp
+                        <div class="notif-item {{ !$notif->is_read ? 'unread' : '' }}" data-id="{{ $notif->id }}">
+                            <i class="{{ $notif->icon ?? $typeInfo['icon'] }}"
+                                style="color: {{ $typeInfo['color'] }};"></i>
+                            <div>
+                                <p>{{ $notif->title }}</p>
+                                <small>{{ $notif->message }}</small>
+                                <span class="notif-time">{{ $notif->created_at->diffForHumans() }}</span>
+                            </div>
+                            @if($notif->link)
+                            <a href="{{ $notif->link }}" class="notif-link"></a>
+                            @endif
+                        </div>
+                        @endforeach
                         @endif
                     </div>
 
@@ -136,32 +138,32 @@
                     </a>
 
                     @if(!$isAdmin)
-                        @if(Route::has('front.home'))
-                            <a href="{{ route('front.home') }}" class="dropdown-item">
-                                <i class="fa-solid fa-magnifying-glass"></i>
-                                Nouvelle recherche
-                            </a>
-                        @endif
+                    @if(Route::has('front.home'))
+                    <a href="{{ route('front.home') }}" class="dropdown-item">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        Nouvelle recherche
+                    </a>
+                    @endif
 
-                        <a href="{{ route('dashboard') }}" class="dropdown-item">
-                            <i class="fa-regular fa-credit-card"></i>
-                            Mes crédits
-                            <span class="badge-credits">{{ $authUser->credits ?? 0 }}</span>
-                        </a>
+                    <a href="{{ route('dashboard') }}" class="dropdown-item">
+                        <i class="fa-regular fa-credit-card"></i>
+                        Mes crédits
+                        <span class="badge-credits">{{ $authUser->credits ?? 0 }}</span>
+                    </a>
                     @endif
 
                     @if($isAdmin)
-                        <div class="dropdown-divider"></div>
+                    <div class="dropdown-divider"></div>
 
-                        <a href="{{ route('admin.security.users.index') }}" class="dropdown-item">
-                            <i class="fa-solid fa-shield-halved"></i>
-                            Utilisateurs & crédits
-                        </a>
+                    <a href="{{ route('admin.security.users.index') }}" class="dropdown-item">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        Utilisateurs & crédits
+                    </a>
 
-                        <a href="{{ route('admin.security.blocked.index') }}" class="dropdown-item">
-                            <i class="fa-solid fa-ban"></i>
-                            Identités bloquées
-                        </a>
+                    <a href="{{ route('admin.security.blocked.index') }}" class="dropdown-item">
+                        <i class="fa-solid fa-ban"></i>
+                        Identités bloquées
+                    </a>
                     @endif
 
                     <div class="dropdown-divider"></div>
@@ -629,7 +631,7 @@
 </style>
 
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', function() {
         const mobileToggle = document.getElementById('mobileToggle');
         const headerRight = document.getElementById('headerRight');
         const userBtn = document.getElementById('userBtn');
@@ -638,14 +640,14 @@
         const notifDropdown = document.getElementById('notifDropdown');
 
         if (mobileToggle && headerRight) {
-            mobileToggle.addEventListener('click', function (e) {
+            mobileToggle.addEventListener('click', function(e) {
                 e.stopPropagation();
                 headerRight.classList.toggle('active');
             });
         }
 
         if (userBtn && userDropdown) {
-            userBtn.addEventListener('click', function (e) {
+            userBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
                 userDropdown.classList.toggle('active');
                 userBtn.classList.toggle('active');
@@ -657,7 +659,7 @@
         }
 
         if (notifBtn && notifDropdown) {
-            notifBtn.addEventListener('click', function (e) {
+            notifBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
                 notifDropdown.classList.toggle('active');
 
@@ -671,7 +673,7 @@
             });
         }
 
-        document.addEventListener('click', function () {
+        document.addEventListener('click', function() {
             if (userDropdown) {
                 userDropdown.classList.remove('active');
             }
@@ -685,7 +687,4 @@
             }
         });
     });
-
-
-
 </script>

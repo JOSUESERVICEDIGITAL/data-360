@@ -55,10 +55,10 @@ return [
         'token' => env('SIRENE_TOKEN'),
     ],
 
-    'pappers' => [
-        'base_url' => env('PAPPERS_BASE_URL', 'https://api.pappers.fr/v2'),
-        'api_key' => env('PAPPERS_API_KEY'),
-    ],
+   'pappers' => [
+    'base_url' => env('PAPPERS_BASE_URL', 'https://api.pappers.fr/v2'),
+    'api_key' => env('PAPPERS_API_KEY'),
+],
 
     'proxycheck' => [
         'api_key' => env('PROXYCHECK_API_KEY'),

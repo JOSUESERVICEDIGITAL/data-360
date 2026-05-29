@@ -399,45 +399,46 @@ class DataRocketEngineService
             ->toArray();
     }
 
-    private function enrichProprietairesWithRne(array $proprietaires): array
-    {
-        return collect($proprietaires)
-            ->map(function ($item) {
-                $rne = null;
+  private function enrichProprietairesWithRne(array $proprietaires): array
+{
+    return collect($proprietaires)
+        ->map(function ($item) {
+            $pappers = null;
+            $rne = null;
 
-                if (!empty($item['siren']) && strlen($item['siren']) === 9) {
-                    $rne = RneEntreprise::where('siren', $item['siren'])->first();
-                }
+            // Priorité 1 : Pappers (API directe)
+            if (!empty($item['siren']) && strlen($item['siren']) === 9) {
+                $pappers = $this->pappersApi->searchBySiren($item['siren']);
+            }
+            
+            // Priorité 2 : RNE (si dispo en base)
+            if (!empty($item['siren']) && strlen($item['siren']) === 9) {
+                $rne = RneEntreprise::where('siren', $item['siren'])->first();
+            }
 
-                return [
-                    'nom' => $rne?->denomination ?? $item['nom'] ?? null,
-                    'nom_bdnb' => $item['nom'] ?? null,
-                    'siren' => $item['siren'] ?? null,
+            // Affichage du capital social depuis Pappers
+            $capital = $pappers['capital_social'] ?? $rne?->capital_formatted ?? $rne?->capital_social ?? null;
 
-                    'siret' => $rne?->siret_siege,
-                    'forme_juridique' => $rne?->forme_juridique,
-                    'activite' => $rne?->activite,
-
-                    'capital_social' => $rne?->capital_formatted ?? $rne?->capital_social,
-                    'capital_social_numeric' => $rne?->capital_social_numeric,
-
-                    'chiffre_affaires' => null,
-                    'resultat' => null,
-                    'effectif' => null,
-
-                    'date_creation' => optional($rne?->date_creation)->format('Y-m-d'),
-
-                    'dirigeant_principal' => data_get($rne?->dirigeants, '0.nom')
-                        ?? data_get($rne?->dirigeants, '0.prenoms')
-                        ?? null,
-
-                    'url_pappers' => null,
-                    'raw_data' => $rne?->raw_data,
-                ];
-            })
-            ->values()
-            ->toArray();
-    }
+            return [
+                'nom' => $pappers['nom'] ?? $rne?->denomination ?? $item['nom'] ?? null,
+                'nom_bdnb' => $item['nom'] ?? null,
+                'siren' => $item['siren'] ?? null,
+                'siret' => $pappers['siret'] ?? $rne?->siret_siege ?? null,
+                'forme_juridique' => $pappers['forme_juridique'] ?? $rne?->forme_juridique ?? null,
+                'activite' => $pappers['activite'] ?? $rne?->activite ?? null,
+                'capital_social' => $capital, // ✅ Capital depuis Pappers
+                'chiffre_affaires' => $pappers['chiffre_affaires'] ?? null,
+                'resultat' => $pappers['resultat'] ?? null,
+                'effectif' => $pappers['effectif'] ?? null,
+                'date_creation' => $pappers['date_creation'] ?? optional($rne?->date_creation)->format('Y-m-d'),
+                'dirigeant_principal' => $pappers['dirigeant_principal'] ?? data_get($rne?->dirigeants, '0.nom'),
+                'url_pappers' => $pappers['url_pappers'] ?? null,
+                'raw_data' => $pappers['raw_data'] ?? $rne?->raw_data,
+            ];
+        })
+        ->values()
+        ->toArray();
+}
 
     private function selectMainBuildings(array $batiments): array
     {
