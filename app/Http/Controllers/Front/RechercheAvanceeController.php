@@ -242,11 +242,10 @@ class RechercheAvanceeController extends Controller
         ]);
 
         // 1. Lire le contenu brut du CSV uploadé
-        // 1. Lire le contenu brut du CSV uploadé
         $csvContent = file_get_contents($request->file('csv_file')->getPathname());
 
-        // ── Convertir en UTF-8 si nécessaire ──
-        $encoding = mb_detect_encoding($csvContent, ['UTF-8', 'Windows-1252', 'ISO-8859-1', 'Latin-1'], true);
+        // Convertir en UTF-8 si nécessaire
+        $encoding = mb_detect_encoding($csvContent, ['UTF-8', 'Windows-1252', 'ISO-8859-1', 'ISO-8859-15'], true);
         if ($encoding && $encoding !== 'UTF-8') {
             $csvContent = mb_convert_encoding($csvContent, 'UTF-8', $encoding);
         }
