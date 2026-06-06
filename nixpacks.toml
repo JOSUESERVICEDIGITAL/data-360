@@ -19,7 +19,7 @@ nixPkgs = [
 [phases.install]
 cmds = [
   "export COMPOSER_ALLOW_SUPERUSER=1",
-  "composer install --no-dev --optimize-autoloader --ignore-platform-reqs",
+  "composer install --no-dev --optimize-autoloader",
   "npm install",
   "npm run build"
 ]
