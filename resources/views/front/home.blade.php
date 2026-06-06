@@ -147,6 +147,7 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Toggle recherche avancée ── */
     .advanced-toggle-wrap {
         margin-top: 1.25rem;
         text-align: center;
@@ -185,6 +186,36 @@
         transform: rotate(180deg);
     }
 
+    /* ── Bandeau premium lock ── */
+    .premium-lock-banner {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: linear-gradient(135deg, #fef3c7, #fde68a);
+        border: 1.5px solid #f59e0b;
+        border-radius: 12px;
+        padding: 0.6rem 1.2rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #92400e;
+        margin-top: 1rem;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+
+    .premium-lock-banner:hover {
+        background: linear-gradient(135deg, #fde68a, #fcd34d);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        color: #78350f;
+    }
+
+    .premium-lock-banner i {
+        font-size: 1rem;
+    }
+
+    /* ── Panneau CSV ── */
     .advanced-panel {
         max-height: 0;
         overflow: hidden;
@@ -295,7 +326,6 @@
     }
 
     .file-selected.visible { display: flex; }
-
     .file-selected i { color: var(--blue-main); font-size: 1.2rem; flex-shrink: 0; }
     .file-selected .file-name {
         font-size: 0.9rem; font-weight: 600; color: var(--blue-deep);
@@ -346,7 +376,6 @@
     }
     .csv-template-link:hover { color: var(--blue-hover); text-decoration: underline; }
 
-    /* Debug panel */
     .csv-debug-panel {
         background: #0f172a; border-radius: 12px; padding: 12px 16px;
         margin-bottom: 1rem; font-family: monospace; font-size: 0.78rem;
@@ -403,113 +432,134 @@
             </button>
         </form>
 
-        {{-- ── Toggle recherche avancée ── --}}
-        <div class="advanced-toggle-wrap">
-            <button type="button" class="advanced-toggle" id="advancedToggle" aria-expanded="false" aria-controls="advancedPanel">
-                <i class="fa-solid fa-sliders"></i>
-                Recherche avancée — traiter plusieurs adresses
-                <span class="chevron" aria-hidden="true">▾</span>
-            </button>
-        </div>
+        {{-- ── Recherche avancée — visible uniquement pour premium/enterprise ── --}}
+        @php
+            $hasPremiumAccess = Auth::check() && in_array(Auth::user()->plan, ['premium', 'enterprise']);
+        @endphp
 
-        {{-- ── Panneau CSV accordéon ── --}}
-        <div class="advanced-panel" id="advancedPanel" role="region" aria-labelledby="advancedToggle">
-            <div class="advanced-panel-inner">
-                <h3>
-                    <i class="fa-solid fa-file-csv"></i>
-                    Import CSV — traitement en masse
-                </h3>
-                <p class="subtitle">
-                    Importez un fichier CSV contenant vos adresses pour les enrichir en une seule opération.
-                    Résultats téléchargeables une fois le traitement terminé.
-                </p>
+        @if($hasPremiumAccess)
+            {{-- Toggle accordéon --}}
+            <div class="advanced-toggle-wrap">
+                <button type="button" class="advanced-toggle" id="advancedToggle" aria-expanded="false" aria-controls="advancedPanel">
+                    <i class="fa-solid fa-sliders"></i>
+                    Recherche avancée — traiter plusieurs adresses
+                    <span class="chevron" aria-hidden="true">▾</span>
+                </button>
+            </div>
 
-                {{-- Debug panel --}}
-                <div class="csv-debug-panel" id="csvDebugPanel">
-                    <div style="color:#38bdf8; font-weight:700; margin-bottom:6px;">🛠 Debug CSV</div>
-                    <div style="margin-bottom:3px;">
-                        Route POST : <span style="color:#fbbf24;">{{ route('front.recherche.csv') }}</span>
-                    </div>
-                    <div id="dbgFile" style="margin-bottom:3px;">Fichier : <span style="color:#f1f5f9;">—</span></div>
-                    <div id="dbgStatus" style="margin-bottom:3px;">Statut : <span style="color:#f1f5f9;">En attente</span></div>
-                    <div style="margin-bottom:3px;">
-                        CSRF : <span style="color:#fbbf24;">{{ substr(csrf_token(), 0, 16) }}…</span>
-                    </div>
-                    <div style="margin-bottom:3px;">
-                        Auth :
-                        @auth
-                            <span style="color:#4ade80;">✅ Connecté ({{ Auth::user()->email }})</span>
-                        @else
-                            <span style="color:#f87171;">❌ Non connecté</span>
-                        @endauth
-                    </div>
-                    <div id="dbgLog" style="margin-top:8px; border-top:1px solid #1e293b; padding-top:8px; color:#64748b;">Log : —</div>
-                </div>
-
-                <button type="button" id="toggleDebug" style="
-                    background:none; border:1px solid #e2e8f0; border-radius:8px;
-                    padding:4px 10px; font-size:0.75rem; color:#94a3b8;
-                    cursor:pointer; margin-bottom:1rem;
-                ">🛠 Afficher debug</button>
-
-                {{-- Messages --}}
-                @if(session('success'))
-                    <div style="background:#dcfce7; border:1px solid #86efac; border-radius:10px; padding:10px 14px; margin-bottom:1rem; color:#15803d; font-size:0.88rem;">
-                        <i class="fa-solid fa-circle-check"></i> {{ session('success') }}
-                    </div>
-                @endif
-
-                @if($errors->has('csv_file'))
-                    <div style="background:#fee2e2; border:1px solid #fca5a5; border-radius:10px; padding:10px 14px; margin-bottom:1rem; color:#b91c1c; font-size:0.88rem;">
-                        <i class="fa-solid fa-circle-xmark"></i> {{ $errors->first('csv_file') }}
-                    </div>
-                @endif
-
-                {{-- Formulaire CSV --}}
-                <form
-                    method="POST"
-                    action="{{ route('front.recherche.csv') }}"
-                    enctype="multipart/form-data"
-                    id="csvForm"
-                >
-                    @csrf
-
-                    <div class="drop-zone" id="dropZone">
-                        <input type="file" name="csv_file" id="csvFileInput" accept=".csv,text/csv">
-                        <span class="dz-icon"><i class="fa-solid fa-cloud-arrow-up"></i></span>
-                        <div class="dz-label">Glissez votre fichier CSV ici</div>
-                        <div class="dz-hint">ou cliquez pour parcourir — CSV uniquement, max 10 Mo</div>
-                    </div>
-
-                    <div class="file-selected" id="fileSelectedInfo">
+            {{-- Panneau CSV --}}
+            <div class="advanced-panel" id="advancedPanel" role="region" aria-labelledby="advancedToggle">
+                <div class="advanced-panel-inner">
+                    <h3>
                         <i class="fa-solid fa-file-csv"></i>
-                        <span class="file-name" id="fileName">—</span>
-                        <span class="file-size" id="fileSize"></span>
-                        <button type="button" class="file-remove" id="fileRemove" title="Retirer le fichier">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                    </div>
-
-                    <p class="csv-format-hint">
-                        <i class="fa-solid fa-circle-info"></i>
-                        Le fichier doit contenir une colonne <strong>adresse</strong> (ou <em>address</em>).
-                        Colonnes supplémentaires conservées dans le résultat exporté.
+                        Import CSV — traitement en masse
+                    </h3>
+                    <p class="subtitle">
+                        Importez un fichier CSV contenant vos adresses pour les enrichir en une seule opération.
+                        Résultats téléchargeables une fois le traitement terminé.
                     </p>
 
-                    <div class="panel-footer">
-                        <button type="submit" class="btn-csv-submit" id="csvSubmitBtn" disabled>
-                            <span class="spinner"></span>
-                            <i class="fa-solid fa-rocket btn-csv-icon"></i>
-                            <span class="btn-csv-text">Lancer le traitement</span>
-                        </button>
-                        <a href="{{ route('front.recherche.csv.template') }}" class="csv-template-link" download>
-                            <i class="fa-solid fa-download"></i>
-                            Télécharger un modèle CSV
-                        </a>
+                    {{-- Debug panel --}}
+                    <div class="csv-debug-panel" id="csvDebugPanel">
+                        <div style="color:#38bdf8; font-weight:700; margin-bottom:6px;">🛠 Debug CSV</div>
+                        <div style="margin-bottom:3px;">
+                            Route POST : <span style="color:#fbbf24;">{{ route('front.recherche.csv') }}</span>
+                        </div>
+                        <div id="dbgFile" style="margin-bottom:3px;">Fichier : <span style="color:#f1f5f9;">—</span></div>
+                        <div id="dbgStatus" style="margin-bottom:3px;">Statut : <span style="color:#f1f5f9;">En attente</span></div>
+                        <div style="margin-bottom:3px;">
+                            CSRF : <span style="color:#fbbf24;">{{ substr(csrf_token(), 0, 16) }}…</span>
+                        </div>
+                        <div style="margin-bottom:3px;">
+                            Auth : <span style="color:#4ade80;">✅ Connecté ({{ Auth::user()->email }}) — Plan : {{ Auth::user()->plan }}</span>
+                        </div>
+                        <div id="dbgLog" style="margin-top:8px; border-top:1px solid #1e293b; padding-top:8px; color:#64748b;">Log : —</div>
                     </div>
-                </form>
+
+                    <button type="button" id="toggleDebug" style="
+                        background:none; border:1px solid #e2e8f0; border-radius:8px;
+                        padding:4px 10px; font-size:0.75rem; color:#94a3b8;
+                        cursor:pointer; margin-bottom:1rem;
+                    ">🛠 Afficher debug</button>
+
+                    @if(session('success'))
+                        <div style="background:#dcfce7; border:1px solid #86efac; border-radius:10px; padding:10px 14px; margin-bottom:1rem; color:#15803d; font-size:0.88rem;">
+                            <i class="fa-solid fa-circle-check"></i> {{ session('success') }}
+                        </div>
+                    @endif
+
+                    @if($errors->has('csv_file'))
+                        <div style="background:#fee2e2; border:1px solid #fca5a5; border-radius:10px; padding:10px 14px; margin-bottom:1rem; color:#b91c1c; font-size:0.88rem;">
+                            <i class="fa-solid fa-circle-xmark"></i> {{ $errors->first('csv_file') }}
+                        </div>
+                    @endif
+
+                    <form
+                        method="POST"
+                        action="{{ route('front.recherche.csv') }}"
+                        enctype="multipart/form-data"
+                        id="csvForm"
+                    >
+                        @csrf
+
+                        <div class="drop-zone" id="dropZone">
+                            <input type="file" name="csv_file" id="csvFileInput" accept=".csv,text/csv">
+                            <span class="dz-icon"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+                            <div class="dz-label">Glissez votre fichier CSV ici</div>
+                            <div class="dz-hint">ou cliquez pour parcourir — CSV uniquement, max 10 Mo</div>
+                        </div>
+
+                        <div class="file-selected" id="fileSelectedInfo">
+                            <i class="fa-solid fa-file-csv"></i>
+                            <span class="file-name" id="fileName">—</span>
+                            <span class="file-size" id="fileSize"></span>
+                            <button type="button" class="file-remove" id="fileRemove" title="Retirer le fichier">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <p class="csv-format-hint">
+                            <i class="fa-solid fa-circle-info"></i>
+                            Le fichier doit contenir une colonne <strong>adresse</strong> (ou <em>address</em>).
+                            Colonnes supplémentaires conservées dans le résultat exporté.
+                        </p>
+
+                        <div class="panel-footer">
+                            <button type="submit" class="btn-csv-submit" id="csvSubmitBtn" disabled>
+                                <span class="spinner"></span>
+                                <i class="fa-solid fa-rocket btn-csv-icon"></i>
+                                <span class="btn-csv-text">Lancer le traitement</span>
+                            </button>
+                            <a href="{{ route('front.recherche.csv.template') }}" class="csv-template-link" download>
+                                <i class="fa-solid fa-download"></i>
+                                Télécharger un modèle CSV
+                            </a>
+                        </div>
+                    </form>
+                </div>
             </div>
-        </div>
+
+        @elseif(Auth::check())
+            {{-- Utilisateur connecté mais plan FREE → bandeau upgrade --}}
+            <div class="advanced-toggle-wrap">
+                <a href="{{ route('front.credits.buy') }}" class="premium-lock-banner">
+                    <i class="fa-solid fa-crown"></i>
+                    Recherche avancée — disponible en Premium
+                    <i class="fa-solid fa-arrow-right" style="font-size:0.8rem;"></i>
+                </a>
+            </div>
+
+        @else
+            {{-- Non connecté → invitation à se connecter --}}
+            <div class="advanced-toggle-wrap">
+                <a href="{{ route('login') }}" class="premium-lock-banner">
+                    <i class="fa-solid fa-lock"></i>
+                    Recherche avancée — connectez-vous pour accéder
+                    <i class="fa-solid fa-arrow-right" style="font-size:0.8rem;"></i>
+                </a>
+            </div>
+        @endif
+
     </div>
 </section>
 
@@ -543,15 +593,17 @@
         btnText.textContent = 'Recherche en cours…';
     });
 
-    // ── 2. Accordéon recherche avancée ──────────────────────────
+    // ── 2. Accordéon recherche avancée (premium only) ───────────
     const toggle = document.getElementById('advancedToggle');
     const panel  = document.getElementById('advancedPanel');
 
-    toggle.addEventListener('click', function () {
-        const isOpen = panel.classList.toggle('open');
-        toggle.classList.toggle('open', isOpen);
-        toggle.setAttribute('aria-expanded', String(isOpen));
-    });
+    if (toggle && panel) {
+        toggle.addEventListener('click', function () {
+            const isOpen = panel.classList.toggle('open');
+            toggle.classList.toggle('open', isOpen);
+            toggle.setAttribute('aria-expanded', String(isOpen));
+        });
+    }
 
     // ── 3. Debug panel ──────────────────────────────────────────
     const debugPanel  = document.getElementById('csvDebugPanel');
@@ -561,13 +613,16 @@
     const dbgLog      = document.getElementById('dbgLog');
     let   debugOn     = false;
 
-    toggleDebug.addEventListener('click', function () {
-        debugOn = !debugOn;
-        debugPanel.style.display = debugOn ? 'block' : 'none';
-        toggleDebug.textContent  = debugOn ? '🛠 Masquer debug' : '🛠 Afficher debug';
-    });
+    if (toggleDebug) {
+        toggleDebug.addEventListener('click', function () {
+            debugOn = !debugOn;
+            debugPanel.style.display = debugOn ? 'block' : 'none';
+            toggleDebug.textContent  = debugOn ? '🛠 Masquer debug' : '🛠 Afficher debug';
+        });
+    }
 
     function log(msg, color) {
+        if (!dbgLog) return;
         const t = new Date().toLocaleTimeString();
         dbgLog.innerHTML = '<span style="color:' + (color || '#94a3b8') + '">[' + t + '] ' + msg + '</span>';
         console.log('[CSV]', msg);
@@ -583,6 +638,8 @@
     const csvSubmit  = document.getElementById('csvSubmitBtn');
     const csvForm    = document.getElementById('csvForm');
 
+    if (!csvForm) return; // pas premium → rien à initialiser
+
     function fmt(bytes) {
         if (bytes < 1024)    return bytes + ' o';
         if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' Ko';
@@ -595,8 +652,8 @@
         fileSizeEl.textContent = fmt(file.size);
         fileInfo.classList.add('visible');
         csvSubmit.disabled = false;
-        dbgFile.innerHTML   = 'Fichier : <span style="color:#4ade80">' + file.name + ' (' + fmt(file.size) + ') — ' + (file.type || 'type inconnu') + '</span>';
-        dbgStatus.innerHTML = 'Statut : <span style="color:#fbbf24">Fichier prêt ✅</span>';
+        if (dbgFile) dbgFile.innerHTML = 'Fichier : <span style="color:#4ade80">' + file.name + ' (' + fmt(file.size) + ')</span>';
+        if (dbgStatus) dbgStatus.innerHTML = 'Statut : <span style="color:#fbbf24">Fichier prêt ✅</span>';
         log('Fichier sélectionné : ' + file.name, '#4ade80');
     }
 
@@ -606,8 +663,8 @@
         fileNameEl.textContent = '—';
         fileSizeEl.textContent = '';
         csvSubmit.disabled = true;
-        dbgFile.innerHTML   = 'Fichier : <span style="color:#f1f5f9">—</span>';
-        dbgStatus.innerHTML = 'Statut : <span style="color:#f1f5f9">En attente</span>';
+        if (dbgFile) dbgFile.innerHTML = 'Fichier : <span style="color:#f1f5f9">—</span>';
+        if (dbgStatus) dbgStatus.innerHTML = 'Statut : <span style="color:#f1f5f9">En attente</span>';
         log('Fichier retiré', '#f87171');
     }
 
@@ -657,7 +714,7 @@
             return;
         }
         log('🚀 Envoi vers ' + csvForm.action, '#fbbf24');
-        dbgStatus.innerHTML = 'Statut : <span style="color:#fbbf24">⏳ Envoi en cours…</span>';
+        if (dbgStatus) dbgStatus.innerHTML = 'Statut : <span style="color:#fbbf24">⏳ Envoi en cours…</span>';
         csvSubmit.disabled = true;
         csvSubmit.classList.add('loading');
         var icon = csvSubmit.querySelector('.btn-csv-icon');

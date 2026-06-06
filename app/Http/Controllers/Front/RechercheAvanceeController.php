@@ -237,6 +237,12 @@ class RechercheAvanceeController extends Controller
     // ────────────────────────────────────────────────────────────
     public function csvImport(Request $request)
     {
+
+        // Vérification plan premium
+        if (!Auth::check() || !in_array(Auth::user()->plan, ['premium', 'enterprise'])) {
+            abort(403, 'Accès réservé aux comptes Premium et Enterprise.');
+        }
+
         $request->validate([
             'csv_file' => 'required|file|mimes:csv,txt|max:10240',
         ]);
