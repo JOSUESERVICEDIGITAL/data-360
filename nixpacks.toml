@@ -45,4 +45,4 @@ cmds = [
 ]
 
 [start]
-cmd = "php artisan serve --host=0.0.0.0 --port=$PORT"
+cmd = "mkdir -p storage/app/csv_imports/pending && mkdir -p storage/app/public/csv_imports && php artisan serve --host=0.0.0.0 --port=$PORT"
