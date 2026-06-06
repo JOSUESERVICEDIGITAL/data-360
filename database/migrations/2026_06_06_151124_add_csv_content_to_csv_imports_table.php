@@ -9,20 +9,18 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up()
+public function up()
 {
     Schema::table('csv_imports', function (Blueprint $table) {
         $table->longText('csv_content')->nullable()->after('filename_original');
+        $table->longText('xlsx_content')->nullable()->after('filename_result');
     });
 }
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
-    {
-        Schema::table('csv_imports', function (Blueprint $table) {
-            $table->dropColumn('csv_content');
-        });
-    }
+public function down(): void
+{
+    Schema::table('csv_imports', function (Blueprint $table) {
+        $table->dropColumn(['csv_content', 'xlsx_content']);
+    });
+}
 };

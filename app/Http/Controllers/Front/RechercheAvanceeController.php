@@ -16,25 +16,62 @@ use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 class RechercheAvanceeController extends Controller
 {
     private array $collectifKeywords = [
-        'collectif', 'collective', 'immeuble', 'copropriete', 'copropriété',
-        'résidence', 'residence', 'appartement', 'appartements',
+        'collectif',
+        'collective',
+        'immeuble',
+        'copropriete',
+        'copropriété',
+        'résidence',
+        'residence',
+        'appartement',
+        'appartements',
     ];
 
     private array $enrichedCols = [
-        'representant_legal', 'nom_representant', 'type_representant',
-        'siren_syndic', 'siret_syndic', 'immatriculation_copro',
-        'nom_residence', 'nb_lots_habitation', 'score_rnic',
-        'type_batiment', 'annee_construction', 'nb_logements',
-        'nb_niveaux', 'hauteur', 'surface_habitable', 'surface_emprise_sol',
-        'classe_dpe', 'ges', 'type_chauffage_principal', 'energie_chauffage_collectif',
-        'nb_proprietaires', 'nb_coproprietes', 'siren_copropriete',
-        'adresse_normalisee', 'code_postal', 'ville', 'code_insee',
-        'latitude', 'longitude',
-        'qpv_eligible', 'qp_2024', 'qp_2015', 'zfu',
-        'rnb_id', 'rnb_statut', 'rnb_nb_adresses',
-        'syndic_forme_juridique', 'syndic_capital_social', 'syndic_chiffre_affaires',
-        'syndic_resultat', 'syndic_effectif', 'syndic_dirigeant',
-        'dr_statut', 'dr_erreur',
+        'representant_legal',
+        'nom_representant',
+        'type_representant',
+        'siren_syndic',
+        'siret_syndic',
+        'immatriculation_copro',
+        'nom_residence',
+        'nb_lots_habitation',
+        'score_rnic',
+        'type_batiment',
+        'annee_construction',
+        'nb_logements',
+        'nb_niveaux',
+        'hauteur',
+        'surface_habitable',
+        'surface_emprise_sol',
+        'classe_dpe',
+        'ges',
+        'type_chauffage_principal',
+        'energie_chauffage_collectif',
+        'nb_proprietaires',
+        'nb_coproprietes',
+        'siren_copropriete',
+        'adresse_normalisee',
+        'code_postal',
+        'ville',
+        'code_insee',
+        'latitude',
+        'longitude',
+        'qpv_eligible',
+        'qp_2024',
+        'qp_2015',
+        'zfu',
+        'rnb_id',
+        'rnb_statut',
+        'rnb_nb_adresses',
+        'syndic_forme_juridique',
+        'syndic_capital_social',
+        'syndic_chiffre_affaires',
+        'syndic_resultat',
+        'syndic_effectif',
+        'syndic_dirigeant',
+        'dr_statut',
+        'dr_erreur',
     ];
 
     private array $enrichedHeaders = [
@@ -185,9 +222,9 @@ class RechercheAvanceeController extends Controller
     public function csvTemplate()
     {
         $csv = "adresse\n"
-             . "\"10 rue de la Paix, 75001 Paris\"\n"
-             . "\"5 avenue Victor Hugo, 69002 Lyon\"\n"
-             . "\"3 place Bellecour, 69002 Lyon\"";
+            . "\"10 rue de la Paix, 75001 Paris\"\n"
+            . "\"5 avenue Victor Hugo, 69002 Lyon\"\n"
+            . "\"3 place Bellecour, 69002 Lyon\"";
 
         return response($csv, 200, [
             'Content-Type'        => 'text/csv; charset=UTF-8',
@@ -205,7 +242,16 @@ class RechercheAvanceeController extends Controller
         ]);
 
         // 1. Lire le contenu brut du CSV uploadé
+        // 1. Lire le contenu brut du CSV uploadé
         $csvContent = file_get_contents($request->file('csv_file')->getPathname());
+
+        // ── Convertir en UTF-8 si nécessaire ──
+        $encoding = mb_detect_encoding($csvContent, ['UTF-8', 'Windows-1252', 'ISO-8859-1', 'Latin-1'], true);
+        if ($encoding && $encoding !== 'UTF-8') {
+            $csvContent = mb_convert_encoding($csvContent, 'UTF-8', $encoding);
+        }
+        // Supprimer le BOM UTF-8 si présent
+        $csvContent = preg_replace('/^\xEF\xBB\xBF/', '', $csvContent);
 
         // 2. Compter les lignes
         $reader = Reader::createFromString($csvContent);
@@ -329,34 +375,65 @@ class RechercheAvanceeController extends Controller
             }
 
             if ($colIdx = ($colIndexMap['representant_legal'] ?? null)) {
-                $this->applyColorCell($sheet, $colIdx, $excelRow,
-                    str_contains($rowData['representant_legal'] ?? '', 'Avec'));
+                $this->applyColorCell(
+                    $sheet,
+                    $colIdx,
+                    $excelRow,
+                    str_contains($rowData['representant_legal'] ?? '', 'Avec')
+                );
             }
             if ($colIdx = ($colIndexMap['type_batiment'] ?? null)) {
-                $this->applyColorCell($sheet, $colIdx, $excelRow,
-                    !$this->isCollectif($rowData['type_batiment'] ?? ''), true);
+                $this->applyColorCell(
+                    $sheet,
+                    $colIdx,
+                    $excelRow,
+                    !$this->isCollectif($rowData['type_batiment'] ?? ''),
+                    true
+                );
             }
             if ($colIdx = ($colIndexMap['type_chauffage_principal'] ?? null)) {
-                $this->applyColorCell($sheet, $colIdx, $excelRow,
-                    !$this->isCollectif($rowData['type_chauffage_principal'] ?? ''), true);
+                $this->applyColorCell(
+                    $sheet,
+                    $colIdx,
+                    $excelRow,
+                    !$this->isCollectif($rowData['type_chauffage_principal'] ?? ''),
+                    true
+                );
             }
             if ($colIdx = ($colIndexMap['energie_chauffage_collectif'] ?? null)) {
-                $this->applyColorCell($sheet, $colIdx, $excelRow,
-                    !$this->isCollectif($rowData['energie_chauffage_collectif'] ?? ''), true);
+                $this->applyColorCell(
+                    $sheet,
+                    $colIdx,
+                    $excelRow,
+                    !$this->isCollectif($rowData['energie_chauffage_collectif'] ?? ''),
+                    true
+                );
             }
             if ($colIdx = ($colIndexMap['qpv_eligible'] ?? null)) {
-                $this->applyColorCell($sheet, $colIdx, $excelRow,
-                    ($rowData['qpv_eligible'] ?? '') === 'Éligible');
+                $this->applyColorCell(
+                    $sheet,
+                    $colIdx,
+                    $excelRow,
+                    ($rowData['qpv_eligible'] ?? '') === 'Éligible'
+                );
             }
             foreach (['qp_2024', 'qp_2015', 'zfu'] as $zoneKey) {
                 if ($colIdx = ($colIndexMap[$zoneKey] ?? null)) {
-                    $this->applyColorCell($sheet, $colIdx, $excelRow,
-                        ($rowData[$zoneKey] ?? '') !== 'Oui');
+                    $this->applyColorCell(
+                        $sheet,
+                        $colIdx,
+                        $excelRow,
+                        ($rowData[$zoneKey] ?? '') !== 'Oui'
+                    );
                 }
             }
             if ($colIdx = ($colIndexMap['dr_statut'] ?? null)) {
-                $this->applyColorCell($sheet, $colIdx, $excelRow,
-                    str_starts_with($rowData['dr_statut'] ?? '', 'OK'));
+                $this->applyColorCell(
+                    $sheet,
+                    $colIdx,
+                    $excelRow,
+                    str_starts_with($rowData['dr_statut'] ?? '', 'OK')
+                );
             }
 
             $sheet->getRowDimension($excelRow)->setRowHeight(22);
@@ -385,7 +462,10 @@ class RechercheAvanceeController extends Controller
 
     private function applyColorCell(
         \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet,
-        int $colIdx, int $row, bool $isGood, bool $onlyIfNotEmpty = false
+        int $colIdx,
+        int $row,
+        bool $isGood,
+        bool $onlyIfNotEmpty = false
     ): void {
         $colLetter = Coordinate::stringFromColumnIndex($colIdx);
         $cellRef   = $colLetter . $row;
@@ -395,12 +475,20 @@ class RechercheAvanceeController extends Controller
         }
 
         $sheet->getStyle($cellRef)->applyFromArray([
-            'font'      => ['bold' => true, 'name' => 'Arial', 'size' => 9,
-                            'color' => ['rgb' => $isGood ? '15803D' : 'B91C1C']],
-            'fill'      => ['fillType' => Fill::FILL_SOLID,
-                            'startColor' => ['rgb' => $isGood ? 'DCFCE7' : 'FEE2E2']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER,
-                            'vertical'   => Alignment::VERTICAL_CENTER],
+            'font'      => [
+                'bold' => true,
+                'name' => 'Arial',
+                'size' => 9,
+                'color' => ['rgb' => $isGood ? '15803D' : 'B91C1C']
+            ],
+            'fill'      => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => $isGood ? 'DCFCE7' : 'FEE2E2']
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical'   => Alignment::VERTICAL_CENTER
+            ],
         ]);
     }
 
