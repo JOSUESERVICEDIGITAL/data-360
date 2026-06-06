@@ -5,81 +5,36 @@ namespace App\Http\Controllers\Front;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
 use League\Csv\Reader;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 
 class RechercheAvanceeController extends Controller
 {
-    // ────────────────────────────────────────────────────────────
-    // Mots-clés "collectif"
-    // ────────────────────────────────────────────────────────────
     private array $collectifKeywords = [
-        'collectif',
-        'collective',
-        'immeuble',
-        'copropriete',
-        'copropriété',
-        'résidence',
-        'residence',
-        'appartement',
-        'appartements',
+        'collectif', 'collective', 'immeuble', 'copropriete', 'copropriété',
+        'résidence', 'residence', 'appartement', 'appartements',
     ];
 
-    // ────────────────────────────────────────────────────────────
-    // Colonnes enrichies
-    // ────────────────────────────────────────────────────────────
     private array $enrichedCols = [
-        'representant_legal',
-        'nom_representant',
-        'type_representant',
-        'siren_syndic',
-        'siret_syndic',
-        'immatriculation_copro',
-        'nom_residence',
-        'nb_lots_habitation',
-        'score_rnic',
-        'type_batiment',
-        'annee_construction',
-        'nb_logements',
-        'nb_niveaux',
-        'hauteur',
-        'surface_habitable',
-        'surface_emprise_sol',
-        'classe_dpe',
-        'ges',
-        'type_chauffage_principal',
-        'energie_chauffage_collectif',
-        'nb_proprietaires',
-        'nb_coproprietes',
-        'siren_copropriete',
-        'adresse_normalisee',
-        'code_postal',
-        'ville',
-        'code_insee',
-        'latitude',
-        'longitude',
-        'qpv_eligible',
-        'qp_2024',
-        'qp_2015',
-        'zfu',
-        'rnb_id',
-        'rnb_statut',
-        'rnb_nb_adresses',
-        'syndic_forme_juridique',
-        'syndic_capital_social',
-        'syndic_chiffre_affaires',
-        'syndic_resultat',
-        'syndic_effectif',
-        'syndic_dirigeant',
-        'dr_statut',
-        'dr_erreur',
+        'representant_legal', 'nom_representant', 'type_representant',
+        'siren_syndic', 'siret_syndic', 'immatriculation_copro',
+        'nom_residence', 'nb_lots_habitation', 'score_rnic',
+        'type_batiment', 'annee_construction', 'nb_logements',
+        'nb_niveaux', 'hauteur', 'surface_habitable', 'surface_emprise_sol',
+        'classe_dpe', 'ges', 'type_chauffage_principal', 'energie_chauffage_collectif',
+        'nb_proprietaires', 'nb_coproprietes', 'siren_copropriete',
+        'adresse_normalisee', 'code_postal', 'ville', 'code_insee',
+        'latitude', 'longitude',
+        'qpv_eligible', 'qp_2024', 'qp_2015', 'zfu',
+        'rnb_id', 'rnb_statut', 'rnb_nb_adresses',
+        'syndic_forme_juridique', 'syndic_capital_social', 'syndic_chiffre_affaires',
+        'syndic_resultat', 'syndic_effectif', 'syndic_dirigeant',
+        'dr_statut', 'dr_erreur',
     ];
 
     private array $enrichedHeaders = [
@@ -225,27 +180,14 @@ class RechercheAvanceeController extends Controller
     ];
 
     // ────────────────────────────────────────────────────────────
-    // Détecte si une valeur texte correspond à "collectif"
-    // ────────────────────────────────────────────────────────────
-    private function isCollectif(string $value): bool
-    {
-        if (empty($value)) return false;
-        $lower = mb_strtolower(trim($value));
-        foreach ($this->collectifKeywords as $kw) {
-            if (str_contains($lower, $kw)) return true;
-        }
-        return false;
-    }
-
-    // ────────────────────────────────────────────────────────────
     // Modèle CSV vide
     // ────────────────────────────────────────────────────────────
     public function csvTemplate()
     {
         $csv = "adresse\n"
-            . "\"10 rue de la Paix, 75001 Paris\"\n"
-            . "\"5 avenue Victor Hugo, 69002 Lyon\"\n"
-            . "\"3 place Bellecour, 69002 Lyon\"";
+             . "\"10 rue de la Paix, 75001 Paris\"\n"
+             . "\"5 avenue Victor Hugo, 69002 Lyon\"\n"
+             . "\"3 place Bellecour, 69002 Lyon\"";
 
         return response($csv, 200, [
             'Content-Type'        => 'text/csv; charset=UTF-8',
@@ -254,7 +196,7 @@ class RechercheAvanceeController extends Controller
     }
 
     // ────────────────────────────────────────────────────────────
-    // Import CSV → job asynchrone → page de suivi
+    // Import CSV → stockage en base → job asynchrone
     // ────────────────────────────────────────────────────────────
     public function csvImport(Request $request)
     {
@@ -262,35 +204,31 @@ class RechercheAvanceeController extends Controller
             'csv_file' => 'required|file|mimes:csv,txt|max:10240',
         ]);
 
-        // 1. Créer le dossier si inexistant
-        $pendingDir = storage_path('app/csv_imports/pending');
-        if (!is_dir($pendingDir)) {
-            mkdir($pendingDir, 0755, true);
+        // 1. Lire le contenu brut du CSV uploadé
+        $csvContent = file_get_contents($request->file('csv_file')->getPathname());
+
+        // 2. Compter les lignes
+        $reader = Reader::createFromString($csvContent);
+        $reader->setHeaderOffset(0);
+        $total = count(iterator_to_array($reader->getRecords()));
+
+        if ($total === 0) {
+            return back()->withErrors(['csv_file' => 'Le fichier CSV est vide.']);
         }
 
-        // 2. Sauvegarder en conservant l'extension originale
-        $extension = $request->file('csv_file')->getClientOriginalExtension() ?: 'csv';
-        $filename  = Str::random(40) . '.' . $extension;
-        $request->file('csv_file')->move($pendingDir, $filename);
-        $fullPath  = $pendingDir . DIRECTORY_SEPARATOR . $filename;
-
-        // 3. Compter les lignes
-        $csv = Reader::createFromPath($fullPath, 'r');
-        $csv->setHeaderOffset(0);
-        $total = count(iterator_to_array($csv->getRecords()));
-
-        // 4. Créer l'entrée en base
+        // 3. Créer l'entrée en base avec le contenu CSV
         $import = \App\Models\Back\CsvImport::create([
             'user_id'           => Auth::id(),
             'filename_original' => $request->file('csv_file')->getClientOriginalName(),
+            'csv_content'       => $csvContent,  // ← stocké en base, pas sur disque
             'total_lignes'      => $total,
             'statut'            => 'en_attente',
         ]);
 
-        // 5. Dispatcher le job
-        \App\Jobs\ProcessCsvImport::dispatch($import, $fullPath);
+        // 4. Dispatcher le job — plus de chemin de fichier
+        \App\Jobs\ProcessCsvImport::dispatch($import);
 
-        // 6. Rediriger vers la page de suivi
+        // 5. Rediriger vers la page de suivi
         return redirect()->route('front.csv.suivi', $import->id)
             ->with('success', "Import lancé — {$total} adresses en cours de traitement.");
     }
@@ -313,9 +251,30 @@ class RechercheAvanceeController extends Controller
             'progress'        => $import->progress,
             'lignes_traitees' => $import->lignes_traitees,
             'total_lignes'    => $import->total_lignes,
+            // URL de téléchargement via route dédiée
             'download_url'    => $import->statut === 'termine'
-                ? asset('storage/csv_imports/' . $import->filename_result)
+                ? route('front.csv.download', $import->id)
                 : null,
+        ]);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Téléchargement du XLSX depuis la base
+    // ────────────────────────────────────────────────────────────
+    public function download(\App\Models\Back\CsvImport $import)
+    {
+        if ($import->statut !== 'termine' || empty($import->xlsx_content)) {
+            abort(404, 'Fichier non disponible.');
+        }
+
+        $xlsxContent = base64_decode($import->xlsx_content);
+        $filename    = 'data360-enrichi-' . $import->created_at->format('Ymd-His') . '.xlsx';
+
+        return response($xlsxContent, 200, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+            'Content-Length'      => strlen($xlsxContent),
+            'Cache-Control'       => 'max-age=0',
         ]);
     }
 
@@ -334,7 +293,7 @@ class RechercheAvanceeController extends Controller
             $colIndexMap[$key] = $i + 1;
         }
 
-        // ── En-têtes ──────────────────────────────────────────
+        // En-têtes
         foreach ($allCols as $i => $key) {
             $colLetter = Coordinate::stringFromColumnIndex($i + 1);
             $cellRef   = $colLetter . '1';
@@ -350,7 +309,7 @@ class RechercheAvanceeController extends Controller
         }
         $sheet->getRowDimension(1)->setRowHeight(38);
 
-        // ── Lignes de données ─────────────────────────────────
+        // Données
         foreach ($rows as $rowIdx => $rowData) {
             $excelRow = $rowIdx + 2;
             $baseBg   = ($rowIdx % 2 === 0) ? 'FFFFFF' : 'F8FAFC';
@@ -358,7 +317,8 @@ class RechercheAvanceeController extends Controller
             foreach ($allCols as $i => $key) {
                 $colLetter = Coordinate::stringFromColumnIndex($i + 1);
                 $cellRef   = $colLetter . $excelRow;
-                $value = $this->sanitize((string) ($rowData[$key] ?? ''));
+                $value     = $this->sanitize((string) ($rowData[$key] ?? ''));
+
                 $sheet->getCell($cellRef)->setValue($value);
                 $sheet->getStyle($cellRef)->applyFromArray([
                     'font'      => ['name' => 'Arial', 'size' => 9, 'color' => ['rgb' => '1E293B']],
@@ -368,68 +328,51 @@ class RechercheAvanceeController extends Controller
                 ]);
             }
 
-            // Représentant légal
             if ($colIdx = ($colIndexMap['representant_legal'] ?? null)) {
-                $isAvec = str_contains($rowData['representant_legal'] ?? '', 'Avec');
-                $this->applyColorCell($sheet, $colIdx, $excelRow, $isAvec);
+                $this->applyColorCell($sheet, $colIdx, $excelRow,
+                    str_contains($rowData['representant_legal'] ?? '', 'Avec'));
             }
-
-            // Type bâtiment
             if ($colIdx = ($colIndexMap['type_batiment'] ?? null)) {
-                $isCollectif = $this->isCollectif($rowData['type_batiment'] ?? '');
-                $this->applyColorCell($sheet, $colIdx, $excelRow, !$isCollectif, true);
+                $this->applyColorCell($sheet, $colIdx, $excelRow,
+                    !$this->isCollectif($rowData['type_batiment'] ?? ''), true);
             }
-
-            // Type chauffage
             if ($colIdx = ($colIndexMap['type_chauffage_principal'] ?? null)) {
-                $isCollectif = $this->isCollectif($rowData['type_chauffage_principal'] ?? '');
-                $this->applyColorCell($sheet, $colIdx, $excelRow, !$isCollectif, true);
+                $this->applyColorCell($sheet, $colIdx, $excelRow,
+                    !$this->isCollectif($rowData['type_chauffage_principal'] ?? ''), true);
             }
-
-            // Énergie chauffage
             if ($colIdx = ($colIndexMap['energie_chauffage_collectif'] ?? null)) {
-                $isCollectif = $this->isCollectif($rowData['energie_chauffage_collectif'] ?? '');
-                $this->applyColorCell($sheet, $colIdx, $excelRow, !$isCollectif, true);
+                $this->applyColorCell($sheet, $colIdx, $excelRow,
+                    !$this->isCollectif($rowData['energie_chauffage_collectif'] ?? ''), true);
             }
-
-            // QPV éligible
             if ($colIdx = ($colIndexMap['qpv_eligible'] ?? null)) {
-                $isEligible = ($rowData['qpv_eligible'] ?? '') === 'Éligible';
-                $this->applyColorCell($sheet, $colIdx, $excelRow, $isEligible);
+                $this->applyColorCell($sheet, $colIdx, $excelRow,
+                    ($rowData['qpv_eligible'] ?? '') === 'Éligible');
             }
-
-            // QP 2024 / QP 2015 / ZFU
             foreach (['qp_2024', 'qp_2015', 'zfu'] as $zoneKey) {
                 if ($colIdx = ($colIndexMap[$zoneKey] ?? null)) {
-                    $isOui = ($rowData[$zoneKey] ?? '') === 'Oui';
-                    $this->applyColorCell($sheet, $colIdx, $excelRow, !$isOui);
+                    $this->applyColorCell($sheet, $colIdx, $excelRow,
+                        ($rowData[$zoneKey] ?? '') !== 'Oui');
                 }
             }
-
-            // Statut traitement
             if ($colIdx = ($colIndexMap['dr_statut'] ?? null)) {
-                $isOk = ($rowData['dr_statut'] ?? '') === 'OK';
-                $this->applyColorCell($sheet, $colIdx, $excelRow, $isOk);
+                $this->applyColorCell($sheet, $colIdx, $excelRow,
+                    str_starts_with($rowData['dr_statut'] ?? '', 'OK'));
             }
 
             $sheet->getRowDimension($excelRow)->setRowHeight(22);
         }
 
-        // ── Largeurs de colonnes ──────────────────────────────
         foreach ($allCols as $i => $key) {
             $colLetter = Coordinate::stringFromColumnIndex($i + 1);
             $sheet->getColumnDimension($colLetter)->setWidth($this->colWidths[$key] ?? 16);
         }
 
-        // ── Figer ligne 1 + colonnes originales ──────────────
         $freezeCol = Coordinate::stringFromColumnIndex(count($originalCols) + 1);
         $sheet->freezePane($freezeCol . '2');
 
-        // ── Filtre automatique ────────────────────────────────
         $lastColLetter = Coordinate::stringFromColumnIndex(count($allCols));
         $sheet->setAutoFilter('A1:' . $lastColLetter . (count($rows) + 1));
 
-        // ── Métadonnées ───────────────────────────────────────
         $spreadsheet->getProperties()
             ->setCreator('Data360')
             ->setLastModifiedBy('Data360')
@@ -440,50 +383,45 @@ class RechercheAvanceeController extends Controller
         return $spreadsheet;
     }
 
-    // ────────────────────────────────────────────────────────────
-    // Applique couleur verte ou rouge sur une cellule (v2+ syntax)
-    // ────────────────────────────────────────────────────────────
     private function applyColorCell(
         \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet,
-        int  $colIdx,
-        int  $row,
-        bool $isGood,
-        bool $onlyIfNotEmpty = false
+        int $colIdx, int $row, bool $isGood, bool $onlyIfNotEmpty = false
     ): void {
         $colLetter = Coordinate::stringFromColumnIndex($colIdx);
         $cellRef   = $colLetter . $row;
 
         if ($onlyIfNotEmpty) {
-            $cellValue = (string) $sheet->getCell($cellRef)->getValue();
-            if (empty(trim($cellValue))) return;
+            if (empty(trim((string) $sheet->getCell($cellRef)->getValue()))) return;
         }
 
-        $bg   = $isGood ? 'DCFCE7' : 'FEE2E2';
-        $text = $isGood ? '15803D' : 'B91C1C';
-
         $sheet->getStyle($cellRef)->applyFromArray([
-            'font'      => ['bold' => true, 'name' => 'Arial', 'size' => 9, 'color' => ['rgb' => $text]],
-            'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $bg]],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+            'font'      => ['bold' => true, 'name' => 'Arial', 'size' => 9,
+                            'color' => ['rgb' => $isGood ? '15803D' : 'B91C1C']],
+            'fill'      => ['fillType' => Fill::FILL_SOLID,
+                            'startColor' => ['rgb' => $isGood ? 'DCFCE7' : 'FEE2E2']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER,
+                            'vertical'   => Alignment::VERTICAL_CENTER],
         ]);
     }
 
-    // ────────────────────────────────────────────────────────────
-    // Lecture d'une valeur dans objet / tableau / raw_data JSON
-    // ────────────────────────────────────────────────────────────
+    private function isCollectif(string $value): bool
+    {
+        if (empty($value)) return false;
+        $lower = mb_strtolower(trim($value));
+        foreach ($this->collectifKeywords as $kw) {
+            if (str_contains($lower, $kw)) return true;
+        }
+        return false;
+    }
 
-
-    // ── À ajouter dans RechercheAvanceeController.php
-    // (juste avant la méthode val() par exemple)
     private function sanitize(?string $value): string
     {
         if ($value === null) return '';
-        // Supprimer les caractères de contrôle XML invalides
         $value = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $value);
-        // Forcer UTF-8
         $value = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
         return $value ?? '';
     }
+
     private function val($model, array $keys, $default = ''): string
     {
         foreach ($keys as $key) {
@@ -504,13 +442,9 @@ class RechercheAvanceeController extends Controller
         return $default;
     }
 
-    // ────────────────────────────────────────────────────────────
-    // Extraction récursive RNB
-    // ────────────────────────────────────────────────────────────
     private function extractRnb($data, &$rnbId, &$rnbStatut, &$addresses): void
     {
         if (!is_array($data)) return;
-
         if (isset($data['rnb_id']) && !$rnbId)     $rnbId     = $data['rnb_id'];
         if (isset($data['status']) && !$rnbStatut) $rnbStatut = $data['status'];
 

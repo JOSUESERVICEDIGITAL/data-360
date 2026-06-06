@@ -7,8 +7,20 @@ use Illuminate\Database\Eloquent\Model;
 class CsvImport extends Model
 {
     protected $fillable = [
-        'user_id', 'filename_original', 'filename_result',
-        'statut', 'total_lignes', 'lignes_traitees', 'erreur_message',
+        'statut',
+        'total_lignes',
+        'lignes_traitees',
+        'erreur_message',
+        'user_id',
+        'filename_original',
+        'csv_content',
+        'filename_result',
+        'xlsx_content',
+        'statut',
+        'total_lignes',
+        'lignes_traitees',
+        'erreur_message',
+
     ];
 
     public function getProgressAttribute(): int

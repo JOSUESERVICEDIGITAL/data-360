@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Models\Back\CsvImport;
 use App\Models\Back\Copropriete;
 use App\Models\Back\Adresse as AdresseModel;
-use App\Models\Back\Batiment;
 use App\Services\Api\DataRocketEngineService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,9 +26,7 @@ class ProcessCsvImport implements ShouldQueue
     public int $timeout = 7200;
     public int $tries   = 1;
 
-    // ────────────────────────────────────────────────────────────
-    // OPTION 3 — Cache en mémoire pour éviter les doublons d'API
-    // ────────────────────────────────────────────────────────────
+    // Cache mémoire pour éviter les doublons d'appels API
     private array $resultatCache = [];
 
     private array $collectifKeywords = [
@@ -196,9 +193,11 @@ class ProcessCsvImport implements ShouldQueue
         'dr_erreur'                   => 30,
     ];
 
+    // ────────────────────────────────────────────────────────────
+    // Constructeur — plus de csvPath, tout est en base
+    // ────────────────────────────────────────────────────────────
     public function __construct(
         public CsvImport $import,
-        public string    $csvPath,
     ) {}
 
     // ────────────────────────────────────────────────────────────
@@ -209,8 +208,8 @@ class ProcessCsvImport implements ShouldQueue
         $this->import->update(['statut' => 'en_cours']);
 
         try {
-            // 1. Lire le CSV
-            $csv = Reader::createFromPath($this->csvPath, 'r');
+            // 1. Lire le CSV depuis la base (pas depuis le disque)
+            $csv = Reader::createFromString($this->import->csv_content);
             $csv->setHeaderOffset(0);
             $rows = iterator_to_array($csv->getRecords());
 
@@ -234,9 +233,7 @@ class ProcessCsvImport implements ShouldQueue
 
             $this->import->update(['total_lignes' => $total]);
 
-            // ── OPTION 2 — Découper en chunks de 10 pour
-            //    libérer la mémoire et mettre à jour la progression
-            //    régulièrement
+            // 2. Traitement par chunks de 10
             $chunks = array_chunk($rows, 10, true);
 
             foreach ($chunks as $chunk) {
@@ -247,15 +244,11 @@ class ProcessCsvImport implements ShouldQueue
                         $output[] = array_merge($row, array_fill_keys($this->enrichedCols, ''));
                     } else {
                         try {
-                            // ── OPTION 3 — Cache : si adresse déjà traitée
-                            //    dans ce batch, réutiliser le résultat
                             $cacheKey = mb_strtolower(trim($adresse));
 
                             if (isset($this->resultatCache[$cacheKey])) {
                                 $resultat = $this->resultatCache[$cacheKey];
                             } else {
-                                // ── OPTION 3 — Cache DB : chercher si
-                                //    l'adresse existe déjà en base
                                 $resultat = $this->getFromDbCache($adresse, $engine);
                                 $this->resultatCache[$cacheKey] = $resultat;
                             }
@@ -272,31 +265,27 @@ class ProcessCsvImport implements ShouldQueue
                 }
 
                 // Mise à jour progression après chaque chunk
-                $processed = min(count($output), $total);
-                $this->import->update(['lignes_traitees' => $processed]);
-
-                // ── Libérer la mémoire entre les chunks
+                $this->import->update(['lignes_traitees' => min(count($output), $total)]);
                 gc_collect_cycles();
             }
 
-            // 2. Générer le XLSX
+            // 3. Générer le XLSX en mémoire (pas sur disque)
             $spreadsheet = $this->buildXlsx($originalCols, $output);
-            $filename    = 'data360-enrichi-' . now()->format('Ymd-His') . '.xlsx';
-            $outputDir   = storage_path('app/public/csv_imports');
 
-            if (!is_dir($outputDir)) {
-                mkdir($outputDir, 0755, true);
-            }
+            ob_start();
+            (new Xlsx($spreadsheet))->save('php://output');
+            $xlsxBinary = ob_get_clean();
 
-            (new Xlsx($spreadsheet))->save($outputDir . '/' . $filename);
-
+            // 4. Stocker le XLSX en base64 dans la base de données
             $this->import->update([
                 'statut'          => 'termine',
-                'filename_result' => $filename,
+                'xlsx_content'    => base64_encode($xlsxBinary),  // ← en base, pas sur disque
                 'lignes_traitees' => $total,
             ]);
 
-            @unlink($this->csvPath);
+            // Libérer la mémoire
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet, $xlsxBinary);
 
         } catch (\Throwable $e) {
             $this->import->update([
@@ -308,21 +297,14 @@ class ProcessCsvImport implements ShouldQueue
     }
 
     // ────────────────────────────────────────────────────────────
-    // OPTION 3 — Cache DB : réutiliser les données déjà en base
-    // Si l'adresse a déjà été traitée → retourner depuis la DB
-    // Sinon → appeler l'API et sauvegarder
+    // Cache DB : réutiliser les données déjà en base
     // ────────────────────────────────────────────────────────────
     private function getFromDbCache(string $adresse, DataRocketEngineService $engine): array
     {
-        // Chercher l'adresse normalisée en base
         $adresseEnBase = AdresseModel::where('adresse_complete', 'like', '%' . trim($adresse) . '%')
-            ->with([
-                'batiments',
-                'coproprietes.syndics',
-            ])
+            ->with(['batiments', 'coproprietes.syndics'])
             ->first();
 
-        // Si trouvée avec des bâtiments → construire le résultat depuis la DB
         if ($adresseEnBase && $adresseEnBase->batiments->count() > 0) {
             return [
                 'success'            => true,
@@ -330,10 +312,8 @@ class ProcessCsvImport implements ShouldQueue
                 'batiments'          => $adresseEnBase->batiments->all(),
                 'coproprietes'       => $adresseEnBase->coproprietes->all(),
                 'syndics'            => $adresseEnBase->coproprietes
-                                            ->flatMap(fn($c) => $c->syndics)
-                                            ->unique('id')
-                                            ->values()
-                                            ->all(),
+                    ->flatMap(fn($c) => $c->syndics)
+                    ->unique('id')->values()->all(),
                 'proprietaires_bdnb' => [],
                 'cadastre'           => [],
                 'rnb'                => null,
@@ -342,7 +322,6 @@ class ProcessCsvImport implements ShouldQueue
             ];
         }
 
-        // Sinon appel API complet
         return $engine->searchByAddress($adresse);
     }
 
@@ -483,7 +462,6 @@ class ProcessCsvImport implements ShouldQueue
                 ]);
             }
 
-            // Couleurs conditionnelles
             if ($colIdx = ($colIndexMap['representant_legal'] ?? null)) {
                 $this->applyColorCell($sheet, $colIdx, $excelRow,
                     str_contains($rowData['representant_legal'] ?? '', 'Avec'));
@@ -511,23 +489,21 @@ class ProcessCsvImport implements ShouldQueue
                 }
             }
             if ($colIdx = ($colIndexMap['dr_statut'] ?? null)) {
-                $val  = $rowData['dr_statut'] ?? '';
-                $isOk = str_starts_with($val, 'OK');
-                $this->applyColorCell($sheet, $colIdx, $excelRow, $isOk);
+                $this->applyColorCell($sheet, $colIdx, $excelRow,
+                    str_starts_with($rowData['dr_statut'] ?? '', 'OK'));
             }
 
             $sheet->getRowDimension($excelRow)->setRowHeight(22);
         }
 
-        // Largeurs
         foreach ($allCols as $i => $key) {
             $colLetter = Coordinate::stringFromColumnIndex($i + 1);
             $sheet->getColumnDimension($colLetter)->setWidth($this->colWidths[$key] ?? 16);
         }
 
-        // Figer + filtre
         $freezeCol = Coordinate::stringFromColumnIndex(count($originalCols) + 1);
         $sheet->freezePane($freezeCol . '2');
+
         $lastCol = Coordinate::stringFromColumnIndex(count($allCols));
         $sheet->setAutoFilter('A1:' . $lastCol . (count($rows) + 1));
 
