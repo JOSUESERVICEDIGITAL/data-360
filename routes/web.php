@@ -40,3 +40,4 @@ require __DIR__ . '/back.php';
 require __DIR__ . '/users.php';
 require __DIR__.'/back/maintenance.php';
 require __DIR__.'/avancer.php';
+require __DIR__ . '/superadmin.php';

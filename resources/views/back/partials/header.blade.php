@@ -343,7 +343,7 @@ $recentNotifications = App\Models\Back\Notification::forUser(auth()->id())
         visibility: hidden;
         transform: translateY(-10px);
         transition: all 0.2s ease;
-        z-index: 100;
+        z-index: 99999;
     }
 
     .notif-dropdown.active {
@@ -498,7 +498,7 @@ $recentNotifications = App\Models\Back\Notification::forUser(auth()->id())
         visibility: hidden;
         transform: translateY(-10px);
         transition: all 0.2s ease;
-        z-index: 100;
+        z-index: 99999;
     }
 
     .user-dropdown.active {

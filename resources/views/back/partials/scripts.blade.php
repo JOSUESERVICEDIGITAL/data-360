@@ -1,4 +1,4 @@
-<script>// Dans le header ou le layout principal
+<script>
 function updateUserNotificationBadge() {
     fetch('/api/notifications/unread')
         .then(res => res.json())
