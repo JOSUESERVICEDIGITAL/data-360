@@ -7,16 +7,20 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * PappersScraperService v3
+ * PappersScraperService v4 — VERSION FINALE CORRIGÉE
  * ─────────────────────────────────────────────────────────────────
- * CORRECTIONS v3 :
- *   ✅ Merge intelligent : chaque source COMPLÈTE les champs manquants
- *   ✅ Ne s'arrête plus si capital_social est vide après INPI
- *   ✅ SIRET extrait depuis Pappers HTML
- *   ✅ Forme juridique extraite depuis Pappers HTML
- *   ✅ Dirigeant extrait depuis Pappers HTML
- *   ✅ INPI parsing robuste (essaie plusieurs chemins JSON)
- *   ✅ Capital formaté proprement (1500 → "1 500 €")
+ * CAUSES DU BUG v3 :
+ *   ❌ flatten() + pick() partiel = matchait n'importe quel champ
+ *      contenant 'montant' (ex: adresse, commentaires, etc.)
+ *   ❌ Collisions de clés simples dans flatten() causaient des valeurs
+ *      incorrectes selon l'ordre d'itération JSON
+ *
+ * CORRECTIONS v4 :
+ *   ✅ INPI : chemins EXPLICITES (data_get) pas de recherche partielle
+ *   ✅ Pappers HTML : regex directes robustes
+ *   ✅ Logique simple : essaie chaque source, prend ce qu'elle donne
+ *   ✅ Merge par champ (fill) conservé et simplifié
+ *   ✅ Debug log à chaque étape
  * ─────────────────────────────────────────────────────────────────
  */
 class PappersScraperService
@@ -26,71 +30,65 @@ class PappersScraperService
     private const INPI_API    = 'https://registre-national-entreprises.inpi.fr/api/companies/';
 
     private const DELAY_MS    = 700;
-    private const CACHE_TTL   = 86400; // 24h
+    private const CACHE_TTL   = 86400;
     private const TIMEOUT     = 12;
 
-    // ─────────────────────────────────────────
-    // ENTRÉE PRINCIPALE
-    // ─────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // API PUBLIQUE
+    // ─────────────────────────────────────────────────────────────
 
     public function scrapeBySiren(string $siren): array
     {
         $siren = preg_replace('/\D/', '', $siren);
         if (strlen($siren) !== 9) {
-            return $this->empty($siren, 'SIREN invalide');
+            return $this->emptyResult($siren, 'siren_invalide');
         }
 
-        $cacheKey = "pappers_v3_{$siren}";
+        $cacheKey = "psc_v4_{$siren}";
         if (Cache::has($cacheKey)) {
             return Cache::get($cacheKey);
         }
 
-        // Partir d'un résultat vide
-        $result = $this->empty($siren);
+        $result = $this->emptyResult($siren);
 
-        // ── SOURCE 1 : INPI RNE ──────────────────
-        $inpi = $this->fromInpiRne($siren);
-        $result = $this->fill($result, $inpi);
-        Log::debug("PappersScraper INPI [{$siren}] capital=" . ($result['capital_social'] ?? 'vide'));
+        // ── 1. INPI RNE (gratuit, officiel) ──
+        $inpi = $this->callInpi($siren);
+        $result = $this->merge($result, $inpi, 'inpi_rne');
 
-        // ── SOURCE 2 : Pappers API (si token dispo) ──
-        if ($this->needsCapital($result) && config('services.pappers.key')) {
-            $pappers = $this->fromPappersApi($siren);
-            $result  = $this->fill($result, $pappers);
-            Log::debug("PappersScraper PappersAPI [{$siren}] capital=" . ($result['capital_social'] ?? 'vide'));
+        // ── 2. Pappers API officielle (si clé dispo) ──
+        if ($this->missingCapital($result) && config('services.pappers.key')) {
+            $papi = $this->callPappersApi($siren);
+            $result = $this->merge($result, $papi, 'pappers_api');
         }
 
-        // ── SOURCE 3 : Pappers HTML (toujours tenté pour SIRET + compléments) ──
-        // On tente même si on a déjà le capital, car le HTML peut apporter le SIRET
-        if ($this->needsMoreData($result)) {
-            $html   = $this->fromPappersHtml($siren);
-            $result = $this->fill($result, $html);
-            Log::debug("PappersScraper HTML [{$siren}] capital=" . ($result['capital_social'] ?? 'vide') . " siret=" . ($result['siret_siege'] ?? 'vide'));
+        // ── 3. Pappers HTML (toujours tenté si SIRET ou capital manquants) ──
+        if ($this->missingCapital($result) || $this->missingSiret($result)) {
+            $html = $this->callPappersHtml($siren);
+            $result = $this->merge($result, $html, 'pappers_html');
         }
 
-        // ── TOUJOURS mettre l'URL Pappers ──
         $result['url_pappers'] = self::PAPPERS_WEB . $siren;
 
-        if (!$this->isEmpty($result)) {
+        Log::debug("PappersScraper [{$siren}] → capital={$result['capital_social']} siret={$result['siret_siege']} src={$result['source']}");
+
+        // Cacher uniquement si on a trouvé au moins quelque chose
+        if ($result['capital_social'] || $result['siret_siege'] || $result['nom']) {
             Cache::put($cacheKey, $result, self::CACHE_TTL);
         }
 
         return $result;
     }
 
-    /**
-     * Batch scraping — retourne [ 'siren' => [...], ... ]
-     */
     public function scrapeMultiple(array $sirens): array
     {
         $results = [];
-        $unique  = array_unique(array_filter(array_map(
-            fn($s) => preg_replace('/\D/', '', (string) $s),
-            $sirens
-        )));
 
-        foreach ($unique as $siren) {
-            if (strlen($siren) !== 9) continue;
+        $sirens = array_unique(array_filter(
+            array_map(fn($s) => preg_replace('/\D/', '', (string)$s), $sirens),
+            fn($s) => strlen($s) === 9
+        ));
+
+        foreach ($sirens as $siren) {
             $results[$siren] = $this->scrapeBySiren($siren);
             usleep(self::DELAY_MS * 1000);
         }
@@ -98,135 +96,157 @@ class PappersScraperService
         return $results;
     }
 
-    // ─────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
     // SOURCE 1 — INPI RNE
-    // Essaie plusieurs chemins JSON car la structure change
-    // ─────────────────────────────────────────
+    // Chemins explicites selon la vraie structure de l'API INPI
+    // ─────────────────────────────────────────────────────────────
 
-    private function fromInpiRne(string $siren): array
+    private function callInpi(string $siren): array
     {
         try {
-            $response = Http::timeout(self::TIMEOUT)
-                ->withHeaders([
-                    'Accept'     => 'application/json',
-                    'User-Agent' => 'DataRocket/2.0',
-                ])
+            $r = Http::timeout(self::TIMEOUT)
+                ->withHeaders(['Accept' => 'application/json', 'User-Agent' => 'DataRocket/4.0'])
                 ->get(self::INPI_API . $siren);
 
-            if ($response->failed()) {
-                return $this->empty($siren, 'INPI ' . $response->status());
+            if ($r->failed()) {
+                Log::debug("INPI [{$siren}] HTTP " . $r->status());
+                return [];
             }
 
-            $json = $response->json();
+            $json = $r->json();
+            if (!$json) return [];
 
-            // Aplatir pour chercher n'importe où dans la structure
-            $flat = $this->flatten($json);
+            Log::debug("INPI [{$siren}] réponse reçue, clés racine: " . implode(',', array_keys($json)));
 
-            // Capital — essaie plusieurs chemins
-            $montant = $this->pick($flat, [
-                'montant',          // capital.montant
-                'capitalMontant',
-                'capital_montant',
-                'montantCapital',
-            ]);
+            // ── Essayer plusieurs structures connues de l'API INPI ──
 
-            $devise = $this->pick($flat, ['devise', 'currency', 'deviseCapital']) ?? 'EUR';
+            // Structure A : {formality: {content: {personneMorale: {...}}}}
+            $contentA = data_get($json, 'formality.content');
 
+            // Structure B : {company: {formality: {content: {...}}}}
+            $contentB = data_get($json, 'company.formality.content');
+
+            // Structure C : données directement à la racine
+            $contentC = $json;
+
+            // Structure D : {identite: {...}}
+            $contentD = data_get($json, 'identite');
+
+            // Trouver le bon bloc de données
+            $data = null;
+            foreach ([$contentA, $contentB, $contentD, $contentC] as $candidate) {
+                if (is_array($candidate) && !empty($candidate)) {
+                    $data = $candidate;
+                    break;
+                }
+            }
+
+            if (!$data) return [];
+
+            // ── Bloc entreprise (personne morale ou physique) ──
+            $entreprise = $data['personneMorale']
+                       ?? $data['personnePhysique']
+                       ?? $data;
+
+            // ── Capital social ──
+            // Chemins explicites uniquement — pas de recherche partielle
             $capital = null;
+            $montant = data_get($entreprise, 'capital.montant')
+                    ?? data_get($data, 'capital.montant')
+                    ?? data_get($json, 'capital.montant')
+                    ?? data_get($json, 'capitalSocial.montant')
+                    ?? data_get($entreprise, 'capitalSocial')
+                    ?? data_get($data, 'capitalSocial');
+
+            $devise  = data_get($entreprise, 'capital.devise')
+                    ?? data_get($data, 'capital.devise')
+                    ?? 'EUR';
+
             if ($montant !== null && $montant !== '') {
                 $capital = number_format((float) $montant, 0, ',', ' ') . ' ' . $devise;
             }
 
-            // SIRET siège
-            $siret = $this->pick($flat, [
-                'siretSiege',
-                'siret_siege',
-                'siret',
-                'siretEtablissementPrincipal',
-            ]);
+            // ── SIRET siège ──
+            $siret = $this->toSiret(
+                data_get($data, 'etablissementPrincipal.siret')
+                ?? data_get($data, 'siretSiege')
+                ?? data_get($json, 'siretSiege')
+                ?? data_get($json, 'siege.siret')
+            );
 
-            // Dirigeant
-            $prenom  = $this->pick($flat, ['prenom', 'prenoms', 'firstName', 'prenom1UniteLegale']);
-            $nomDir  = $this->pick($flat, ['nomDirigeant', 'nomRepresentant']);
-            // fallback sur clé "nom" mais éviter de prendre la dénomination
-            if (!$nomDir) {
-                foreach ($flat as $k => $v) {
-                    if (str_contains(strtolower($k), 'nom')
-                        && !str_contains(strtolower($k), 'denomination')
-                        && !str_contains(strtolower($k), 'commercial')
-                        && is_string($v) && strlen($v) < 60
-                        && strtoupper($v) !== $v // pas tout en majuscules (= raison sociale)
-                    ) {
-                        $nomDir = $v;
-                        break;
-                    }
-                }
+            // ── Forme juridique ──
+            $forme = data_get($entreprise, 'formeJuridique.libelleFormeJuridique')
+                  ?? data_get($entreprise, 'formeJuridique.libelle')
+                  ?? data_get($entreprise, 'formeJuridique')
+                  ?? data_get($data, 'formeJuridique.libelleFormeJuridique')
+                  ?? null;
+            if (is_array($forme)) $forme = null;
+
+            // ── Dénomination ──
+            $nom = data_get($entreprise, 'denomination')
+                ?? data_get($entreprise, 'denominationSociale')
+                ?? data_get($data, 'denomination')
+                ?? data_get($json, 'denomination')
+                ?? null;
+
+            // ── Activité ──
+            $activite = data_get($data, 'activitePrincipale.libelleActivitePrincipale')
+                     ?? data_get($data, 'activitePrincipale')
+                     ?? data_get($json, 'libelleCodeNaf')
+                     ?? null;
+            if (is_array($activite)) $activite = null;
+
+            // ── Date de création ──
+            $dateCreation = data_get($json, 'dateImmatriculation')
+                         ?? data_get($json, 'dateCreation')
+                         ?? data_get($data, 'dateCreation')
+                         ?? null;
+
+            // ── Dirigeant ──
+            $dirigeants  = data_get($data, 'dirigeants', []);
+            $dirigeant   = null;
+            if (!empty($dirigeants) && is_array($dirigeants)) {
+                $d0        = $dirigeants[0];
+                $prenom    = data_get($d0, 'prenoms') ?? data_get($d0, 'prenom') ?? '';
+                $nomDir    = data_get($d0, 'nom') ?? '';
+                $dirigeant = trim("$prenom $nomDir") ?: null;
             }
-            $dirigeant = trim(($prenom ?? '') . ' ' . ($nomDir ?? '')) ?: null;
 
-            return [
-                'siren'            => $siren,
-                'nom'              => $this->pick($flat, [
-                                        'denomination',
-                                        'denominationSociale',
-                                        'denominationUsuelle',
-                                        'nom_entreprise',
-                                     ]),
-                'siret_siege'      => $siret ? preg_replace('/\D/', '', $siret) : null,
-                'capital_social'   => $capital,
-                'forme_juridique'  => $this->pick($flat, [
-                                        'libelleFormeJuridique',
-                                        'libelle',
-                                        'formeJuridique',
-                                        'forme_juridique',
-                                        'categorieJuridique',
-                                     ]),
-                'activite'         => $this->pick($flat, [
-                                        'libelleActivitePrincipale',
-                                        'libelleSectionActivite',
-                                        'activitePrincipale',
-                                        'activitePrincipaleUniteLegale',
-                                     ]),
-                'date_creation'    => $this->pick($flat, [
-                                        'dateImmatriculation',
-                                        'dateCreation',
-                                        'dateCreationUniteLegale',
-                                     ]),
-                'dirigeant'        => $dirigeant ?: null,
-                'effectif'         => $this->pick($flat, [
-                                        'effectif',
-                                        'trancheEffectif',
-                                        'trancheEffectifsUniteLegale',
-                                     ]),
-                'chiffre_affaires' => null,
-                'source'           => 'inpi_rne',
-            ];
+            // ── Effectif ──
+            $effectif = data_get($json, 'effectif')
+                     ?? data_get($json, 'trancheEffectif')
+                     ?? null;
+
+            Log::debug("INPI [{$siren}] capital={$capital} siret={$siret} nom={$nom}");
+
+            return compact(
+                'nom', 'siret', 'capital', 'forme',
+                'activite', 'dateCreation', 'dirigeant', 'effectif'
+            );
 
         } catch (\Exception $e) {
-            Log::debug("INPI RNE [{$siren}]: " . $e->getMessage());
-            return $this->empty($siren, 'INPI exception');
+            Log::debug("INPI [{$siren}] exception: " . $e->getMessage());
+            return [];
         }
     }
 
-    // ─────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
     // SOURCE 2 — PAPPERS API OFFICIELLE
-    // ─────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
 
-    private function fromPappersApi(string $siren): array
+    private function callPappersApi(string $siren): array
     {
         try {
-            $response = Http::timeout(self::TIMEOUT)
+            $r = Http::timeout(self::TIMEOUT)
                 ->get(self::PAPPERS_API, [
                     'siren'     => $siren,
                     'api_token' => config('services.pappers.key'),
                 ]);
 
-            if ($response->failed()) {
-                return $this->empty($siren, 'Pappers API ' . $response->status());
-            }
+            if ($r->failed()) return [];
 
-            $json  = $response->json();
-            $siege = $json['siege'] ?? [];
+            $json = $r->json();
+            if (!$json) return [];
 
             $capital = null;
             if (!empty($json['capital'])) {
@@ -235,312 +255,338 @@ class PappersScraperService
 
             $dirigeants = $json['representants'] ?? $json['dirigeants'] ?? [];
             $dirigeant  = null;
-            if (!empty($dirigeants)) {
-                $d         = $dirigeants[0];
+            if (!empty($dirigeants[0])) {
+                $d = $dirigeants[0];
                 $dirigeant = trim(($d['prenoms'] ?? '') . ' ' . ($d['nom'] ?? '')) ?: null;
             }
 
             $ca = null;
             if (!empty($json['finances'])) {
                 $fin = end($json['finances']);
-                $caRaw = $fin['chiffre_affaires'] ?? null;
-                if ($caRaw) $ca = number_format((float) $caRaw, 0, ',', ' ') . ' €';
+                if ($fin['chiffre_affaires'] ?? null) {
+                    $ca = number_format((float) $fin['chiffre_affaires'], 0, ',', ' ') . ' €';
+                }
             }
 
             return [
-                'siren'            => $siren,
-                'nom'              => $json['nom_entreprise'] ?? $json['denomination'] ?? null,
-                'siret_siege'      => $siege['siret'] ?? null,
-                'capital_social'   => $capital,
-                'forme_juridique'  => $json['forme_juridique'] ?? null,
-                'activite'         => $json['domaine_activite'] ?? $json['libelle_code_naf'] ?? null,
-                'date_creation'    => $json['date_creation'] ?? null,
-                'dirigeant'        => $dirigeant,
-                'effectif'         => $json['effectif'] ?? $json['tranche_effectif'] ?? null,
-                'chiffre_affaires' => $ca,
-                'source'           => 'pappers_api',
+                'nom'          => $json['nom_entreprise'] ?? $json['denomination'] ?? null,
+                'siret'        => $this->toSiret($json['siege']['siret'] ?? null),
+                'capital'      => $capital,
+                'forme'        => $json['forme_juridique'] ?? null,
+                'activite'     => $json['domaine_activite'] ?? $json['libelle_code_naf'] ?? null,
+                'dateCreation' => $json['date_creation'] ?? null,
+                'dirigeant'    => $dirigeant,
+                'effectif'     => $json['effectif'] ?? $json['tranche_effectif'] ?? null,
+                'ca'           => $ca,
             ];
 
         } catch (\Exception $e) {
-            return $this->empty($siren, 'Pappers API exception');
+            return [];
         }
     }
 
-    // ─────────────────────────────────────────
-    // SOURCE 3 — PAPPERS HTML SCRAPING
-    // Extrait capital, SIRET, forme juridique, dirigeant
-    // ─────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // SOURCE 3 — PAPPERS HTML
+    // ─────────────────────────────────────────────────────────────
 
-    private function fromPappersHtml(string $siren): array
+    private function callPappersHtml(string $siren): array
     {
         try {
-            $response = Http::timeout(self::TIMEOUT)
-                ->withHeaders($this->browserHeaders())
+            $r = Http::timeout(self::TIMEOUT)
+                ->withHeaders($this->headers())
                 ->get(self::PAPPERS_WEB . $siren);
 
-            if ($response->failed()) {
-                return $this->empty($siren, 'HTML ' . $response->status());
+            if ($r->failed()) {
+                Log::debug("Pappers HTML [{$siren}] HTTP " . $r->status());
+                return [];
             }
 
-            $html = $response->body();
+            $html = $r->body();
 
-            if (strlen($html) < 500
+            if (strlen($html) < 800
                 || str_contains($html, 'cf-browser-verification')
+                || str_contains($html, 'Just a moment')
                 || str_contains($html, 'Checking your browser')
             ) {
-                return $this->empty($siren, 'cloudflare_block');
+                Log::debug("Pappers HTML [{$siren}] bloqué Cloudflare");
+                return [];
             }
 
-            // Tenter __NEXT_DATA__ d'abord
-            if (preg_match(
-                '/<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>(.*?)<\/script>/s',
-                $html, $m
-            )) {
-                $jsonData = json_decode($m[1], true);
-                if ($jsonData) {
-                    $flat = $this->flatten($jsonData);
-                    return [
-                        'siren'           => $siren,
-                        'nom'             => $this->pick($flat, ['denomination', 'nom_entreprise', 'denominationSociale']),
-                        'siret_siege'     => $this->cleanSiret($this->pick($flat, ['siret', 'siret_siege', 'siretSiege'])),
-                        'capital_social'  => $this->formatCapital($this->pick($flat, ['capital', 'capital_social', 'capitalSocial', 'montant'])),
-                        'forme_juridique' => $this->pick($flat, ['forme_juridique', 'formeJuridique', 'libelle']),
-                        'activite'        => $this->pick($flat, ['domaine_activite', 'libelle_code_naf', 'activite', 'libelleCodeNaf']),
-                        'date_creation'   => $this->pick($flat, ['date_creation', 'dateCreation']),
-                        'dirigeant'       => $this->pick($flat, ['nom_dirigeant', 'nomDirigeant', 'dirigeant']),
-                        'effectif'        => $this->pick($flat, ['effectif', 'tranche_effectif']),
-                        'chiffre_affaires'=> $this->formatCapital($this->pick($flat, ['chiffre_affaires', 'chiffreAffaires'])),
-                        'source'          => 'pappers_html_next',
-                    ];
+            Log::debug("Pappers HTML [{$siren}] reçu " . strlen($html) . " octets");
+
+            // ── Tenter __NEXT_DATA__ en priorité ──
+            if (preg_match('/<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>(.*?)<\/script>/s', $html, $m)) {
+                $nd = json_decode($m[1], true);
+                if ($nd) {
+                    return $this->parseNextData($nd, $siren, $html);
                 }
             }
 
-            // Fallback regex sur HTML brut
-            return $this->htmlRegexExtract($html, $siren);
+            // ── Fallback : regex HTML brutes ──
+            return $this->parseHtmlDirect($html, $siren);
 
         } catch (\Exception $e) {
-            return $this->empty($siren, 'HTML exception');
+            Log::debug("Pappers HTML [{$siren}] exception: " . $e->getMessage());
+            return [];
         }
     }
 
-    /**
-     * Extraction par regex depuis le HTML brut de Pappers
-     * Couvre capital, SIRET, forme juridique, dirigeant
-     */
-    private function htmlRegexExtract(string $html, string $siren): array
+    private function parseNextData(array $nd, string $siren, string $html): array
     {
-        // ── Capital social ──
-        $capital = $this->formatCapital($this->regex($html, [
-            // Format "1 500 €" ou "1500 €" dans du texte
-            '/[Cc]apital\s+social\s*:?\s*(?:<[^>]*>)*\s*([0-9][0-9\s\.,]*\s*(?:€|EUR|euros?))/i',
-            '/[Cc]apital\s*:?\s*(?:<[^>]*>)*\s*([0-9][0-9\s\.,]*\s*(?:€|EUR|euros?))/i',
-            // Format JSON embarqué
-            '/"capital"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/i',
-            '/capitalSocial["\s:]+([0-9]+(?:\.[0-9]+)?)/i',
-            '/capital_social["\s:]+([0-9]+(?:\.[0-9]+)?)/i',
-            '/montantCapital["\s:]+([0-9]+(?:\.[0-9]+)?)/i',
-            '/montant["\s:]+([0-9]+)\s*,\s*["\s]*devise["\s:]+["\s]*EUR/i',
-            '/data-capital="([^"]+)"/i',
-        ]));
+        // Chercher récursivement capital, siret, etc. dans le JSON
+        $all = $this->deepSearch($nd);
 
-        // ── SIRET siège ── (14 chiffres)
-        $siret = $this->cleanSiret($this->regex($html, [
-            '/SIRET\s+si(?:è|e)ge\s*:?\s*(?:<[^>]*>)*\s*([0-9\s]{14,18})/i',
-            '/SIRET\s*:?\s*(?:<[^>]*>)*\s*([0-9\s]{14,18})/i',
-            '/siret["\s:]+["\s]*([0-9]{14})/i',
-            '/siret_siege["\s:]+["\s]*([0-9]{14})/i',
-            '/siretSiege["\s:]+["\s]*([0-9]{14})/i',
-            '/data-siret="([0-9]{14})"/i',
-            // Numéro 14 chiffres brut dans le texte
-            '/\b(' . $siren . '[0-9]{5})\b/i',
-        ]));
+        // Capital — SEULEMENT depuis les clés qui ont du sens
+        $capital = null;
+        foreach (['capital', 'capital_social', 'capitalSocial', 'montantCapital'] as $k) {
+            if (isset($all[$k]) && is_numeric($all[$k])) {
+                $capital = number_format((float) $all[$k], 0, ',', ' ') . ' €';
+                break;
+            }
+            if (isset($all[$k]) && is_string($all[$k]) && $all[$k] !== '') {
+                $capital = $this->formatMontant($all[$k]);
+                if ($capital) break;
+            }
+        }
 
-        // ── Forme juridique ──
-        $forme = $this->regex($html, [
-            '/[Ff]orme\s+juridique\s*:?\s*(?:<[^>]*>)+([^<]{3,50})</i',
-            '/"forme_juridique"\s*:\s*"([^"]{3,80})"/i',
-            '/formeJuridique["\s:]+["\s]*([^",\}\]{3,80})/i',
-            '/libelleFormeJuridique["\s:]+["\s]*([^",\}]{3,80})/i',
-        ]);
+        // SIRET — chercher explicitement
+        $siret = null;
+        foreach (['siret', 'siretSiege', 'siret_siege', 'siretEtablissementPrincipal'] as $k) {
+            if (isset($all[$k]) && strlen(preg_replace('/\D/', '', $all[$k])) === 14) {
+                $siret = preg_replace('/\D/', '', $all[$k]);
+                break;
+            }
+        }
 
-        // ── Dirigeant principal ──
-        $dirigeant = $this->regex($html, [
-            '/[Dd]irigeant\s*:?\s*(?:<[^>]*>)+([^<]{2,80})</i',
-            '/[Pp]r(?:é|e)sident\s*:?\s*(?:<[^>]*>)+([^<]{2,80})</i',
-            '/[Gg](?:é|e)rant\s*:?\s*(?:<[^>]*>)+([^<]{2,80})</i',
-            '/"nom_dirigeant"\s*:\s*"([^"]{2,80})"/i',
-        ]);
+        // Si toujours pas de SIRET, chercher dans l'HTML
+        if (!$siret) {
+            $siret = $this->extractSiretFromHtml($html, $siren);
+        }
 
-        // ── Activité / NAF ──
-        $activite = $this->regex($html, [
-            '/[Aa]ctivit(?:é|e)\s*:?\s*(?:<[^>]*>)+([^<]{3,100})</i',
-            '/[Aa]ctivit(?:é|e)\s+principale\s*:?\s*(?:<[^>]*>)+([^<]{3,100})</i',
-            '/"domaine_activite"\s*:\s*"([^"]{3,100})"/i',
-            '/"libelle_code_naf"\s*:\s*"([^"]{3,100})"/i',
-        ]);
-
-        // ── Date de création ──
-        $dateCreation = $this->regex($html, [
-            '/[Cc]r(?:é|e)(?:a|é)(?:e|é)\s+le\s*:?\s*(?:<[^>]*>)*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i',
-            '/"date_creation"\s*:\s*"([^"]{8,10})"/i',
-            '/dateCreation["\s:]+["\s]*([0-9]{4}-[0-9]{2}-[0-9]{2})/i',
-        ]);
+        // Si toujours pas de capital, chercher dans l'HTML
+        if (!$capital) {
+            $capital = $this->extractCapitalFromHtml($html);
+        }
 
         return [
-            'siren'            => $siren,
-            'nom'              => $this->regex($html, [
-                                    '/<h1[^>]*>([^<|]+)/i',
-                                    '/property="og:title"\s+content="([^"|<]+)/i',
-                                  ]),
-            'siret_siege'      => $siret,
-            'capital_social'   => $capital,
-            'forme_juridique'  => $forme,
-            'activite'         => $activite,
-            'date_creation'    => $dateCreation,
-            'dirigeant'        => $dirigeant,
-            'effectif'         => $this->regex($html, [
-                                    '/[Ee]ffectif\s*:?\s*(?:<[^>]*>)+([^<]{1,30})</i',
-                                    '/"effectif"\s*:\s*"([^"]{1,30})"/i',
-                                  ]),
-            'chiffre_affaires' => null,
-            'source'           => 'pappers_html',
+            'nom'          => $all['denomination'] ?? $all['nom_entreprise'] ?? $all['denominationSociale'] ?? null,
+            'siret'        => $siret,
+            'capital'      => $capital,
+            'forme'        => $all['forme_juridique'] ?? $all['formeJuridique'] ?? null,
+            'activite'     => $all['domaine_activite'] ?? $all['libelle_code_naf'] ?? $all['activite'] ?? null,
+            'dateCreation' => $all['date_creation'] ?? $all['dateCreation'] ?? null,
+            'dirigeant'    => $all['nom_dirigeant'] ?? $all['nomDirigeant'] ?? null,
+            'effectif'     => $all['effectif'] ?? $all['tranche_effectif'] ?? null,
         ];
     }
 
-    // ─────────────────────────────────────────
-    // MERGE INTELLIGENT
-    // Remplit les champs vides sans écraser les champs déjà remplis
-    // ─────────────────────────────────────────
+    private function parseHtmlDirect(string $html, string $siren): array
+    {
+        return [
+            'nom'          => $this->rx($html, [
+                                '/<h1[^>]*>([^<|]+)/i',
+                                '/property="og:title"\s+content="([^"|<]+)/i',
+                             ]),
+            'siret'        => $this->extractSiretFromHtml($html, $siren),
+            'capital'      => $this->extractCapitalFromHtml($html),
+            'forme'        => $this->rx($html, [
+                                '/[Ff]orme\s+juridique\s*:?\s*(?:<[^>]*>)+([^<]{3,60})/i',
+                                '/"forme_juridique"\s*:\s*"([^"]{3,80})"/i',
+                                '/formeJuridique["\s:]+["\s]*([^",\}]{3,80})/i',
+                             ]),
+            'activite'     => $this->rx($html, [
+                                '/[Aa]ctivit[eé]\s*:?\s*(?:<[^>]*>)+([^<]{5,120})/i',
+                                '/"domaine_activite"\s*:\s*"([^"]{5,120})"/i',
+                             ]),
+            'dateCreation' => $this->rx($html, [
+                                '/"date_creation"\s*:\s*"([0-9]{4}-[0-9]{2}-[0-9]{2})"/i',
+                                '/dateCreation["\s:]+["\s]*([0-9]{4}-[0-9]{2}-[0-9]{2})/i',
+                             ]),
+            'dirigeant'    => $this->rx($html, [
+                                '/"nom_dirigeant"\s*:\s*"([^"]{2,80})"/i',
+                                '/[Dd]irigeant\s*:?\s*(?:<[^>]*>)+([^<]{2,80})/i',
+                             ]),
+            'effectif'     => $this->rx($html, [
+                                '/"effectif"\s*:\s*"([^"]{1,30})"/i',
+                             ]),
+        ];
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // EXTRACTEURS SPÉCIALISÉS
+    // ─────────────────────────────────────────────────────────────
 
     /**
-     * Remplir les trous du résultat de base avec les données de la source extra
+     * Extraire le capital social depuis HTML — patterns robustes
      */
-    private function fill(array $base, array $extra): array
+    private function extractCapitalFromHtml(string $html): ?string
     {
-        $fields = [
-            'nom', 'siret_siege', 'capital_social', 'forme_juridique',
-            'activite', 'date_creation', 'dirigeant', 'effectif', 'chiffre_affaires',
+        // Format texte : "Capital social : 1 500 €"
+        $raw = $this->rx($html, [
+            '/[Cc]apital\s+social\s*[:\-]\s*(?:<[^>]*>)*\s*([0-9][0-9\s\.,]*\s*(?:€|EUR|euros?))/i',
+            '/[Cc]apital\s*[:\-]\s*(?:<[^>]*>)*\s*([0-9][0-9\s\.,]*\s*(?:€|EUR|euros?))/i',
+        ]);
+
+        // Format JSON : "capital":1500 ou "capital":"1500"
+        if (!$raw) {
+            $raw = $this->rx($html, [
+                '/"capital"\s*:\s*"?([0-9]+(?:[.,][0-9]{2})?)"?\s*[,\}]/i',
+                '/capitalSocial["\s:]+([0-9]+(?:[.,][0-9]{2})?)/i',
+                '/capital_social["\s:]+([0-9]+(?:[.,][0-9]{2})?)/i',
+                '/montant["\s:]+([0-9]+(?:[.,][0-9]{2})?)\s*[,\}]/i',
+            ]);
+        }
+
+        return $this->formatMontant($raw);
+    }
+
+    /**
+     * Extraire le SIRET depuis HTML — patterns robustes
+     */
+    private function extractSiretFromHtml(string $html, string $siren): ?string
+    {
+        // Pattern générique : 14 chiffres dont les 9 premiers = SIREN
+        $siretRegex = '/' . $siren . '[0-9]{5}/';
+        if (preg_match($siretRegex, $html, $m)) {
+            return $m[0];
+        }
+
+        // Patterns textuels
+        $raw = $this->rx($html, [
+            '/SIRET\s+(?:si[eè]ge\s*)?[:\-]?\s*(?:<[^>]*>)*\s*([0-9][0-9 ]{12,16}[0-9])/i',
+            '/siret["\s:=]+["\s]*([0-9]{14})/i',
+            '/siretSiege["\s:=]+["\s]*([0-9]{14})/i',
+            '/"siret_siege"\s*:\s*"([0-9]{14})"/i',
+            '/data-siret="([0-9]{14})"/i',
+        ]);
+
+        return $this->toSiret($raw);
+    }
+
+    /**
+     * Recherche récursive dans un JSON — retourne un tableau clé→valeur plat
+     * SEULEMENT pour les champs dont on connaît les noms
+     */
+    private function deepSearch(array $data): array
+    {
+        $wanted = [
+            // Capital
+            'capital', 'capital_social', 'capitalSocial', 'montantCapital',
+            // SIRET
+            'siret', 'siretSiege', 'siret_siege',
+            // Identité
+            'denomination', 'denominationSociale', 'nom_entreprise',
+            'forme_juridique', 'formeJuridique',
+            'domaine_activite', 'libelle_code_naf', 'activite',
+            'date_creation', 'dateCreation',
+            'nom_dirigeant', 'nomDirigeant',
+            'effectif', 'tranche_effectif',
         ];
 
-        foreach ($fields as $field) {
-            if (
-                ($base[$field] ?? null) === null
-                || ($base[$field] ?? '') === ''
-                || $base[$field] === '-'
-            ) {
-                if (!empty($extra[$field])) {
-                    $base[$field] = $extra[$field];
-                    // Mettre à jour la source si ce champ était vide
-                    if ($field === 'capital_social') {
-                        $base['source'] = $extra['source'] ?? $base['source'];
-                    }
-                }
-            }
-        }
-
-        return $base;
-    }
-
-    // ─────────────────────────────────────────
-    // CHECKS
-    // ─────────────────────────────────────────
-
-    private function needsCapital(array $data): bool
-    {
-        return empty($data['capital_social']);
-    }
-
-    private function needsMoreData(array $data): bool
-    {
-        return empty($data['capital_social'])
-            || empty($data['siret_siege'])
-            || empty($data['forme_juridique']);
-    }
-
-    private function isEmpty(array $data): bool
-    {
-        return empty($data['capital_social'])
-            && empty($data['nom'])
-            && empty($data['siret_siege']);
-    }
-
-    // ─────────────────────────────────────────
-    // HELPERS
-    // ─────────────────────────────────────────
-
-    private function flatten(array $array, string $prefix = ''): array
-    {
         $result = [];
-        foreach ($array as $key => $value) {
-            $fullKey = $prefix ? "{$prefix}.{$key}" : (string) $key;
-            if (is_array($value)) {
-                $result = array_merge($result, $this->flatten($value, $fullKey));
-            } elseif ($value !== null && $value !== '') {
-                $result[$fullKey]        = $value;
-                $result[(string)$key] ??= $value;
+        array_walk_recursive($data, function($value, $key) use (&$result, $wanted) {
+            if (in_array($key, $wanted, true) && !isset($result[$key]) && $value !== null && $value !== '') {
+                $result[$key] = $value;
             }
-        }
+        });
+
         return $result;
     }
 
-    private function pick(array $flat, array $keys): mixed
+    // ─────────────────────────────────────────────────────────────
+    // MERGE — remplit les trous sans écraser
+    // ─────────────────────────────────────────────────────────────
+
+    private function merge(array $result, array $extra, string $sourceName): array
     {
-        foreach ($keys as $key) {
-            if (isset($flat[$key]) && $flat[$key] !== '') return $flat[$key];
-            foreach ($flat as $fKey => $value) {
-                if ($value !== '' && is_string($fKey)
-                    && str_contains(strtolower($fKey), strtolower($key))
-                ) {
-                    return $value;
+        if (empty($extra)) return $result;
+
+        // Mapping des clés de $extra vers les clés de $result
+        $mapping = [
+            'nom'          => 'nom',
+            'siret'        => 'siret_siege',
+            'capital'      => 'capital_social',
+            'forme'        => 'forme_juridique',
+            'activite'     => 'activite',
+            'dateCreation' => 'date_creation',
+            'dirigeant'    => 'dirigeant',
+            'effectif'     => 'effectif',
+            'ca'           => 'chiffre_affaires',
+        ];
+
+        $capitalUpdated = false;
+
+        foreach ($mapping as $extraKey => $resultKey) {
+            $val = $extra[$extraKey] ?? null;
+            if ($val === null || $val === '' || $val === '-') continue;
+
+            if (empty($result[$resultKey])) {
+                $result[$resultKey] = is_string($val) ? trim($val) : $val;
+                if ($resultKey === 'capital_social') {
+                    $capitalUpdated = true;
                 }
             }
         }
+
+        if ($capitalUpdated) {
+            $result['source'] = $sourceName;
+        } elseif ($result['source'] === 'scraper' && !empty($extra)) {
+            $result['source'] = $sourceName;
+        }
+
+        return $result;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // HELPERS
+    // ─────────────────────────────────────────────────────────────
+
+    private function missingCapital(array $r): bool { return empty($r['capital_social']); }
+    private function missingSiret(array $r): bool    { return empty($r['siret_siege']); }
+
+    private function formatMontant(mixed $raw): ?string
+    {
+        if ($raw === null || $raw === '') return null;
+        $raw = trim((string) $raw);
+
+        // Déjà formaté avec €
+        if (str_contains($raw, '€') || stripos($raw, 'eur') !== false) {
+            return preg_replace('/\s+/', ' ', $raw);
+        }
+
+        // Nombre brut (peut avoir virgule ou point décimal)
+        $clean = preg_replace('/[^0-9,.]/', '', $raw);
+        // Enlever la décimale si c'est ",00" ou ".00"
+        $clean = preg_replace('/[,.]00$/', '', $clean);
+        // Garder seulement les chiffres
+        $digits = preg_replace('/[^0-9]/', '', $clean);
+
+        if ($digits !== '' && strlen($digits) >= 1) {
+            return number_format((int) $digits, 0, ',', ' ') . ' €';
+        }
+
         return null;
     }
 
-    private function regex(string $html, array $patterns): ?string
+    private function toSiret(mixed $raw): ?string
     {
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $html, $matches)) {
-                $v = trim(strip_tags(html_entity_decode($matches[1])));
+        if (!$raw) return null;
+        $clean = preg_replace('/\D/', '', (string) $raw);
+        return strlen($clean) === 14 ? $clean : null;
+    }
+
+    private function rx(string $html, array $patterns): ?string
+    {
+        foreach ($patterns as $p) {
+            if (preg_match($p, $html, $m)) {
+                $v = trim(strip_tags(html_entity_decode($m[1])));
                 if ($v !== '') return $v;
             }
         }
         return null;
     }
 
-    private function formatCapital(mixed $raw): ?string
-    {
-        if ($raw === null || $raw === '') return null;
-        $raw = (string) $raw;
-
-        // Déjà formaté
-        if (str_contains($raw, '€') || stripos($raw, 'eur') !== false) {
-            return trim(preg_replace('/\s+/', ' ', $raw));
-        }
-
-        // Nombre avec virgule décimale française (1500,00)
-        if (preg_match('/^([0-9]+)[,.]([0-9]{2})$/', $raw, $m)) {
-            return number_format((float) $m[1], 0, ',', ' ') . ' €';
-        }
-
-        // Nombre brut
-        $digits = preg_replace('/[^0-9]/', '', $raw);
-        if ($digits !== '' && strlen($digits) >= 1) {
-            return number_format((int) $digits, 0, ',', ' ') . ' €';
-        }
-
-        return $raw;
-    }
-
-    private function cleanSiret(?string $raw): ?string
-    {
-        if (!$raw) return null;
-        $cleaned = preg_replace('/\D/', '', $raw);
-        return strlen($cleaned) === 14 ? $cleaned : null;
-    }
-
-    private function browserHeaders(): array
+    private function headers(): array
     {
         return [
             'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -552,7 +598,7 @@ class PappersScraperService
         ];
     }
 
-    private function empty(string $siren, string $error = ''): array
+    private function emptyResult(string $siren, string $error = ''): array
     {
         return [
             'siren'            => $siren,
