@@ -12,16 +12,18 @@ use App\Models\Back\RneEntreprise;
 
 class DataRocketEngineService
 {
-    public function __construct(
-        protected AdresseApiService $adresseApi,
-        protected BdnbApiService $bdnbApi,
-        protected CadastreApiService $cadastreApi,
-        protected CoproprieteApiService $coproprieteApi,
-        protected SireneApiService $sireneApi,
-        protected PappersApiService $pappersApi,
-        protected QpvEligibilityService $qpvEligibilityService,
-        protected RnbApiService $rnbApi,
+       public function __construct(
+        protected AdresseApiService       $adresseApi,
+        protected BdnbApiService          $bdnbApi,
+        protected CadastreApiService      $cadastreApi,
+        protected CoproprieteApiService   $coproprieteApi,
+        protected SireneApiService        $sireneApi,
+        protected PappersApiService       $pappersApi,      // conservé pour rétrocompat
+        protected PappersScraperService   $pappersScraper,  // ← NOUVEAU
+        protected QpvEligibilityService   $qpvEligibilityService,
+        protected RnbApiService           $rnbApi,
     ) {}
+
 
     public function searchByAddress(string $query): array
     {
@@ -399,46 +401,80 @@ class DataRocketEngineService
             ->toArray();
     }
 
-  private function enrichProprietairesWithRne(array $proprietaires): array
-{
-    return collect($proprietaires)
-        ->map(function ($item) {
-            $pappers = null;
-            $rne = null;
-
-            // Priorité 1 : Pappers (API directe)
-            if (!empty($item['siren']) && strlen($item['siren']) === 9) {
-                $pappers = $this->pappersApi->searchBySiren($item['siren']);
-            }
-            
-            // Priorité 2 : RNE (si dispo en base)
-            if (!empty($item['siren']) && strlen($item['siren']) === 9) {
-                $rne = RneEntreprise::where('siren', $item['siren'])->first();
-            }
-
-            // Affichage du capital social depuis Pappers
-            $capital = $pappers['capital_social'] ?? $rne?->capital_formatted ?? $rne?->capital_social ?? null;
-
-            return [
-                'nom' => $pappers['nom'] ?? $rne?->denomination ?? $item['nom'] ?? null,
-                'nom_bdnb' => $item['nom'] ?? null,
-                'siren' => $item['siren'] ?? null,
-                'siret' => $pappers['siret'] ?? $rne?->siret_siege ?? null,
-                'forme_juridique' => $pappers['forme_juridique'] ?? $rne?->forme_juridique ?? null,
-                'activite' => $pappers['activite'] ?? $rne?->activite ?? null,
-                'capital_social' => $capital, // ✅ Capital depuis Pappers
-                'chiffre_affaires' => $pappers['chiffre_affaires'] ?? null,
-                'resultat' => $pappers['resultat'] ?? null,
-                'effectif' => $pappers['effectif'] ?? null,
-                'date_creation' => $pappers['date_creation'] ?? optional($rne?->date_creation)->format('Y-m-d'),
-                'dirigeant_principal' => $pappers['dirigeant_principal'] ?? data_get($rne?->dirigeants, '0.nom'),
-                'url_pappers' => $pappers['url_pappers'] ?? null,
-                'raw_data' => $pappers['raw_data'] ?? $rne?->raw_data,
-            ];
-        })
-        ->values()
-        ->toArray();
-}
+     private function enrichProprietairesWithRne(array $proprietaires): array
+    {
+        if (empty($proprietaires)) {
+            return [];
+        }
+ 
+        // ── 1. Extraire tous les SIRENs valides ──
+        $sirens = collect($proprietaires)
+            ->pluck('siren')
+            ->filter(fn($s) => $s && strlen(preg_replace('/\D/', '', (string) $s)) === 9)
+            ->map(fn($s) => preg_replace('/\D/', '', $s))
+            ->unique()
+            ->values()
+            ->all();
+ 
+        // ── 2. Scraper en batch (1 requête / SIREN, avec cache 24h) ──
+        $scraped = !empty($sirens)
+            ? $this->pappersScraper->scrapeMultiple($sirens)
+            : [];
+ 
+        // ── 3. Mapper chaque propriétaire avec les données scrapées ──
+        return collect($proprietaires)
+            ->map(function (array $item) use ($scraped) {
+                $siren = preg_replace('/\D/', '', $item['siren'] ?? '');
+                $data  = $scraped[$siren] ?? null;
+ 
+                // Si le scraping a échoué ou SIREN vide → fallback RNE base locale
+                if (!$data || !empty($data['error'])) {
+                    $rne = null;
+                    if ($siren) {
+                        $rne = \App\Models\Back\RneEntreprise::where('siren', $siren)->first();
+                    }
+ 
+                    return [
+                        'nom'              => $rne?->denomination          ?? $item['nom']            ?? null,
+                        'nom_bdnb'         => $item['nom']                 ?? null,
+                        'siren'            => $siren                       ?: null,
+                        'siret'            => $rne?->siret_siege           ?? null,
+                        'forme_juridique'  => $rne?->forme_juridique       ?? null,
+                        'activite'         => $rne?->activite              ?? null,
+                        'capital_social'   => $rne?->capital_formatted     ?? $rne?->capital_social ?? null,
+                        'chiffre_affaires' => null,
+                        'resultat'         => null,
+                        'effectif'         => null,
+                        'date_creation'    => optional($rne?->date_creation)->format('Y-m-d'),
+                        'dirigeant_principal' => data_get($rne?->dirigeants, '0.nom'),
+                        'url_pappers'      => $siren ? "https://www.pappers.fr/entreprise/{$siren}" : null,
+                        'source'           => 'rne_local',
+                        'raw_data'         => $rne?->raw_data,
+                    ];
+                }
+ 
+                // ── Données scrapées disponibles ──
+                return [
+                    'nom'              => $data['nom']              ?? $item['nom']   ?? null,
+                    'nom_bdnb'         => $item['nom']              ?? null,
+                    'siren'            => $siren                    ?: null,
+                    'siret'            => $data['siret_siege']      ?? null,
+                    'forme_juridique'  => $data['forme_juridique']  ?? null,
+                    'activite'         => $data['activite']         ?? null,
+                    'capital_social'   => $data['capital_social']   ?? null,
+                    'chiffre_affaires' => $data['chiffre_affaires'] ?? null,
+                    'resultat'         => null,
+                    'effectif'         => $data['effectif']         ?? null,
+                    'date_creation'    => $data['date_creation']    ?? null,
+                    'dirigeant_principal' => $data['dirigeant']     ?? null,
+                    'url_pappers'      => "https://www.pappers.fr/entreprise/{$siren}",
+                    'source'           => $data['source']           ?? 'pappers_scrape',
+                    'raw_data'         => null,
+                ];
+            })
+            ->values()
+            ->all();
+    }
 
     private function selectMainBuildings(array $batiments): array
     {

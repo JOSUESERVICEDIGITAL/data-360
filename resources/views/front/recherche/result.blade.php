@@ -1267,10 +1267,55 @@ if ($label) {
                                         <div class="dr-field-label">Forme juridique</div>
                                         <div class="dr-field-value">{{ $proprietaire['forme_juridique'] ?? '-' }}</div>
                                     </div>
-                                    <div class="dr-field">
-                                        <div class="dr-field-label">Dirigeant principal</div>
-                                        <div class="dr-field-value">{{ $proprietaire['dirigeant_principal'] ?? '-' }}</div>
-                                    </div>
+                                    
+                                    
+{{-- Champs existants --}}
+<div class="dr-field">
+    <div class="dr-field-label">Dirigeant principal</div>
+    <div class="dr-field-value">{{ $proprietaire['dirigeant_principal'] ?? '-' }}</div>
+</div>
+
+{{-- ── NOUVEAUX CHAMPS SCRAPER ── --}}
+<div class="dr-field">
+    <div class="dr-field-label">Activité</div>
+    <div class="dr-field-value">{{ $proprietaire['activite'] ?? '-' }}</div>
+</div>
+
+<div class="dr-field">
+    <div class="dr-field-label">Chiffre d'affaires</div>
+    <div class="dr-field-value">{{ $proprietaire['chiffre_affaires'] ?? '-' }}</div>
+</div>
+
+<div class="dr-field">
+    <div class="dr-field-label">Effectif</div>
+    <div class="dr-field-value">{{ $proprietaire['effectif'] ?? '-' }}</div>
+</div>
+
+<div class="dr-field">
+    <div class="dr-field-label">Date de création</div>
+    <div class="dr-field-value">{{ $proprietaire['date_creation'] ?? '-' }}</div>
+</div>
+
+<div class="dr-field">
+    <div class="dr-field-label">Source données</div>
+    <div class="dr-field-value">
+        @if(($proprietaire['source'] ?? '') === 'pappers_scrape')
+            <span class="dr-status success" style="display:inline-flex;font-size:11px;">
+                <i class="fa-solid fa-spider"></i> Pappers scrape
+            </span>
+        @elseif(($proprietaire['source'] ?? '') === 'rne_local')
+            <span class="dr-status warning" style="display:inline-flex;font-size:11px;">
+                <i class="fa-solid fa-database"></i> RNE local
+            </span>
+        @else
+            <span class="dr-status warning" style="display:inline-flex;font-size:11px;">
+                <i class="fa-solid fa-circle-info"></i> {{ $proprietaire['source'] ?? 'Inconnu' }}
+            </span>
+        @endif
+    </div>
+</div>
+
+
                                 </div>
                                 @if(!empty($proprietaire['url_pappers']))
                                     <div style="margin-top: 16px;"><a href="{{ $proprietaire['url_pappers'] }}" target="_blank"
