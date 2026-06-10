@@ -10,39 +10,48 @@ nixPkgs = [
   "php82Extensions.zip",
   "php82Extensions.mbstring",
   "php82Extensions.openssl",
+  "php82Extensions.pdo",
   "php82Extensions.pdo_mysql",
   "php82Extensions.tokenizer",
   "php82Extensions.xml",
+  "php82Extensions.intl",
+  "php82Extensions.pcntl",
   "nodejs_20"
 ]
 
 [phases.install]
 cmds = [
-  "export COMPOSER_ALLOW_SUPERUSER=1",
-  "composer install --no-dev --optimize-autoloader",
+  "COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader",
   "npm install",
   "npm run build"
 ]
 
 [phases.build]
 cmds = [
-  "php artisan optimize:clear",
-  "php artisan config:clear",
-  "php artisan route:clear",
-  "php artisan view:clear",
+  # ── Dossiers obligatoires Laravel ──
   "mkdir -p storage/framework/cache",
   "mkdir -p storage/framework/sessions",
   "mkdir -p storage/framework/views",
   "mkdir -p storage/logs",
-  "mkdir -p storage/app/public/csv_imports",
-  "mkdir -p storage/app/csv_imports/pending",
+  "mkdir -p bootstrap/cache",
   "chmod -R 775 storage bootstrap/cache",
-  "php artisan migrate --force",
+
+  # ── Migrations : seulement sur le service WEB (pas le Worker) ──
+  # Ajouter SKIP_MIGRATIONS=true dans les variables du service Worker
+  "if [ \"$SKIP_MIGRATIONS\" != \"true\" ]; then php artisan migrate --force; fi",
+
+  # ── Lien symbolique storage ──
   "php artisan storage:link || true",
+
+  # ── Cache Laravel ──
+  "php artisan optimize:clear",
   "php artisan config:cache",
   "php artisan route:cache",
   "php artisan view:cache"
 ]
 
+# ── Service WEB ─────────────────────────────────────────────
+# Le service Worker utilise sa propre commande start dans Railway :
+# php artisan queue:work --timeout=1800 --tries=1 --sleep=3 --max-jobs=100 --max-time=3600
 [start]
-cmd = "mkdir -p storage/app/csv_imports/pending && mkdir -p storage/app/public/csv_imports && php artisan serve --host=0.0.0.0 --port=$PORT"
+cmd = "php artisan serve --host=0.0.0.0 --port=$PORT"
