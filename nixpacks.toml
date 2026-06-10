@@ -29,7 +29,7 @@ cmds = [
 
 [phases.build]
 cmds = [
-  # Dossiers Laravel obligatoires
+  # Dossiers Laravel
   "mkdir -p storage/framework/cache",
   "mkdir -p storage/framework/sessions",
   "mkdir -p storage/framework/views",
@@ -37,20 +37,22 @@ cmds = [
   "mkdir -p bootstrap/cache",
   "chmod -R 775 storage bootstrap/cache",
 
-  # PAS de migrate ici — MySQL inaccessible pendant le build Docker
-  # La migration se fait dans le [start] au runtime
-
   # Lien symbolique storage
   "php artisan storage:link || true",
 
-  # Cache Laravel (sans DB, juste config/routes/views)
-  "php artisan optimize:clear",
+  # ── Clears SANS DB (fichiers uniquement) ──────────────────
+  # NE PAS utiliser optimize:clear → appelle cache:clear → MySQL requis
+  # NE PAS utiliser cache:clear    → MySQL requis (CACHE_STORE=database)
+  "php artisan config:clear",
+  "php artisan route:clear",
+  "php artisan view:clear",
+
+  # ── Caches (fichiers uniquement, pas de DB) ───────────────
   "php artisan config:cache",
   "php artisan route:cache",
   "php artisan view:cache"
 ]
 
-# Au démarrage : migrate PUIS lancer le serveur
-# MySQL est accessible ici (runtime Railway)
+# Runtime : MySQL accessible → migrate + démarrage
 [start]
 cmd = "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT"
