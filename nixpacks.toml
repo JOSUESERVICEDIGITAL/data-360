@@ -1,7 +1,6 @@
 [phases.setup]
 nixPkgs = [
   "php82",
-  "composer",  
   "php82Extensions.bcmath",
   "php82Extensions.curl",
   "php82Extensions.dom",
@@ -22,14 +21,21 @@ nixPkgs = [
 
 [phases.install]
 cmds = [
+  # ── Installer Composer proprement ──
+  "curl -sS https://getcomposer.org/installer | php",
+  "mv composer.phar /usr/local/bin/composer",
+
+  # ── Dépendances PHP ──
   "COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader",
+
+  # ── Frontend ──
   "npm install",
   "npm run build"
 ]
 
 [phases.build]
 cmds = [
-  # ── Dossiers obligatoires Laravel ──
+  # ── Dossiers Laravel ──
   "mkdir -p storage/framework/cache",
   "mkdir -p storage/framework/sessions",
   "mkdir -p storage/framework/views",
@@ -37,22 +43,18 @@ cmds = [
   "mkdir -p bootstrap/cache",
   "chmod -R 775 storage bootstrap/cache",
 
-  # ── Migrations : seulement sur le service WEB (pas le Worker) ──
-  # Ajouter SKIP_MIGRATIONS=true dans les variables du service Worker
+  # ── Migrations (désactivable worker) ──
   "if [ \"$SKIP_MIGRATIONS\" != \"true\" ]; then php artisan migrate --force; fi",
 
-  # ── Lien symbolique storage ──
+  # ── Storage link ──
   "php artisan storage:link || true",
 
-  # ── Cache Laravel ──
+  # ── Optimisation Laravel ──
   "php artisan optimize:clear",
   "php artisan config:cache",
   "php artisan route:cache",
   "php artisan view:cache"
 ]
 
-# ── Service WEB ─────────────────────────────────────────────
-# Le service Worker utilise sa propre commande start dans Railway :
-# php artisan queue:work --timeout=1800 --tries=1 --sleep=3 --max-jobs=100 --max-time=3600
 [start]
 cmd = "php artisan serve --host=0.0.0.0 --port=$PORT"
