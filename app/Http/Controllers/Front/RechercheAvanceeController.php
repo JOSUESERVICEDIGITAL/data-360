@@ -19,15 +19,10 @@ class RechercheAvanceeController extends Controller
 {
     // ─── Mots-clés bâtiments collectifs ────────────────────────
     private array $collectifKeywords = [
-        'collectif',
-        'collective',
-        'immeuble',
-        'copropriete',
-        'copropriété',
-        'résidence',
-        'residence',
-        'appartement',
-        'appartements',
+        'collectif', 'collective', 'immeuble',
+        'copropriete', 'copropriété',
+        'résidence', 'residence',
+        'appartement', 'appartements',
     ];
 
     // ─── Colonnes enrichies à ajouter au CSV ──────────────────
@@ -354,7 +349,7 @@ class RechercheAvanceeController extends Controller
 
     private function progressMessage(CsvImport $import): string
     {
-        return match ($import->statut) {
+        return match($import->statut) {
             'en_attente' => 'En attente de traitement…',
             'en_cours'   => "Traitement en cours — {$import->lignes_traitees}/{$import->total_lignes} adresses",
             'termine'    => 'Traitement terminé ! Votre fichier XLSX est prêt.',
@@ -376,25 +371,18 @@ class RechercheAvanceeController extends Controller
             abort(404, 'Fichier non disponible. Le traitement est peut-être encore en cours.');
         }
 
-        $filename = 'data360-enrichi-' . $import->created_at->format('Ymd-His') . '.xlsx';
+        $xlsxContent = base64_decode($import->xlsx_content);
+        $filename    = 'data360-enrichi-' . $import->created_at->format('Ymd-His') . '.xlsx';
 
-        // ── Décoder le base64 et écrire dans un fichier temporaire ──
-        $xlsxBinary = base64_decode($import->xlsx_content);
-
-        $tmpFile = tempnam(sys_get_temp_dir(), 'data360_xlsx_');
-        file_put_contents($tmpFile, $xlsxBinary);
-        unset($xlsxBinary); // libérer RAM immédiatement
-
-        // ── Streamer depuis le fichier temp ──────────────────────────
-        // deleteFileAfterSend(true) → Laravel supprime le fichier temp après envoi
-        return response()->download($tmpFile, $filename, [
-            'Content-Type'              => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Transfer-Encoding' => 'binary',
-            'Cache-Control'             => 'no-cache, must-revalidate',
-            'Pragma'                    => 'no-cache',
-            'Expires'                   => '0',
-        ])->deleteFileAfterSend(true);
+        return response($xlsxContent, 200, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+            'Content-Length'      => strlen($xlsxContent),
+            'Cache-Control'       => 'no-cache, must-revalidate',
+            'Pragma'              => 'no-cache',
+        ]);
     }
+
     // ════════════════════════════════════════════════════════════
     // CONSTRUCTION XLSX (appelé par ProcessCsvImport)
     // ════════════════════════════════════════════════════════════
@@ -510,9 +498,7 @@ class RechercheAvanceeController extends Controller
         // Représentant légal
         if ($idx = ($colIndexMap['representant_legal'] ?? null)) {
             $this->colorCell(
-                $sheet,
-                $idx,
-                $excelRow,
+                $sheet, $idx, $excelRow,
                 str_contains($rowData['representant_legal'] ?? '', 'Avec')
             );
         }
@@ -520,9 +506,7 @@ class RechercheAvanceeController extends Controller
         // Type bâtiment
         if ($idx = ($colIndexMap['type_batiment'] ?? null)) {
             $this->colorCell(
-                $sheet,
-                $idx,
-                $excelRow,
+                $sheet, $idx, $excelRow,
                 !$this->isCollectif($rowData['type_batiment'] ?? ''),
                 true
             );
@@ -531,9 +515,7 @@ class RechercheAvanceeController extends Controller
         // Type chauffage
         if ($idx = ($colIndexMap['type_chauffage_principal'] ?? null)) {
             $this->colorCell(
-                $sheet,
-                $idx,
-                $excelRow,
+                $sheet, $idx, $excelRow,
                 !$this->isCollectif($rowData['type_chauffage_principal'] ?? ''),
                 true
             );
@@ -542,9 +524,7 @@ class RechercheAvanceeController extends Controller
         // Énergie chauffage
         if ($idx = ($colIndexMap['energie_chauffage_collectif'] ?? null)) {
             $this->colorCell(
-                $sheet,
-                $idx,
-                $excelRow,
+                $sheet, $idx, $excelRow,
                 !$this->isCollectif($rowData['energie_chauffage_collectif'] ?? ''),
                 true
             );
@@ -553,9 +533,7 @@ class RechercheAvanceeController extends Controller
         // Éligibilité QPV
         if ($idx = ($colIndexMap['qpv_eligible'] ?? null)) {
             $this->colorCell(
-                $sheet,
-                $idx,
-                $excelRow,
+                $sheet, $idx, $excelRow,
                 ($rowData['qpv_eligible'] ?? '') === 'Éligible'
             );
         }
@@ -564,9 +542,7 @@ class RechercheAvanceeController extends Controller
         foreach (['qp_2024', 'qp_2015', 'zfu'] as $zoneKey) {
             if ($idx = ($colIndexMap[$zoneKey] ?? null)) {
                 $this->colorCell(
-                    $sheet,
-                    $idx,
-                    $excelRow,
+                    $sheet, $idx, $excelRow,
                     ($rowData[$zoneKey] ?? '') !== 'Oui'
                 );
             }
@@ -575,9 +551,7 @@ class RechercheAvanceeController extends Controller
         // Statut traitement
         if ($idx = ($colIndexMap['dr_statut'] ?? null)) {
             $this->colorCell(
-                $sheet,
-                $idx,
-                $excelRow,
+                $sheet, $idx, $excelRow,
                 str_starts_with($rowData['dr_statut'] ?? '', 'OK')
             );
         }
@@ -636,26 +610,20 @@ class RechercheAvanceeController extends Controller
     private function val(mixed $model, array $keys, string $default = ''): string
     {
         foreach ($keys as $key) {
-            if (
-                is_object($model) && isset($model->{$key})
-                && $model->{$key} !== null && $model->{$key} !== ''
-            ) {
+            if (is_object($model) && isset($model->{$key})
+                && $model->{$key} !== null && $model->{$key} !== '') {
                 return (string) $model->{$key};
             }
-            if (
-                is_array($model) && isset($model[$key])
-                && $model[$key] !== null && $model[$key] !== ''
-            ) {
+            if (is_array($model) && isset($model[$key])
+                && $model[$key] !== null && $model[$key] !== '') {
                 return (string) $model[$key];
             }
             $raw = is_object($model) ? ($model->raw_data ?? []) : ($model['raw_data'] ?? []);
             if (is_string($raw)) {
                 $raw = json_decode($raw, true) ?: [];
             }
-            if (
-                is_array($raw) && isset($raw[$key])
-                && $raw[$key] !== null && $raw[$key] !== ''
-            ) {
+            if (is_array($raw) && isset($raw[$key])
+                && $raw[$key] !== null && $raw[$key] !== '') {
                 return (string) $raw[$key];
             }
         }
@@ -700,20 +668,8 @@ class RechercheAvanceeController extends Controller
     }
 
     // ─── Getter public pour le job ─────────────────────────────
-    public function getEnrichedCols(): array
-    {
-        return $this->enrichedCols;
-    }
-    public function getEnrichedHeaders(): array
-    {
-        return $this->enrichedHeaders;
-    }
-    public function getGroupColors(): array
-    {
-        return $this->groupColors;
-    }
-    public function getColWidths(): array
-    {
-        return $this->colWidths;
-    }
+    public function getEnrichedCols(): array   { return $this->enrichedCols; }
+    public function getEnrichedHeaders(): array { return $this->enrichedHeaders; }
+    public function getGroupColors(): array    { return $this->groupColors; }
+    public function getColWidths(): array      { return $this->colWidths; }
 }
