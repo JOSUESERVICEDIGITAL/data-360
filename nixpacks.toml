@@ -21,12 +21,11 @@ nixPkgs = [
 
 [phases.install]
 cmds = [
-  # ── Installer Composer proprement ──
-  "curl -sS https://getcomposer.org/installer | php",
-  "mv composer.phar /usr/local/bin/composer",
+  # ── Composer installé dans le runtime nix directement ──
+  "nix-env -iA nixpkgs.composer",
 
-  # ── Dépendances PHP ──
-  "COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader",
+  # ── PHP deps ──
+  "composer install --no-dev --optimize-autoloader",
 
   # ── Frontend ──
   "npm install",
@@ -35,7 +34,6 @@ cmds = [
 
 [phases.build]
 cmds = [
-  # ── Dossiers Laravel ──
   "mkdir -p storage/framework/cache",
   "mkdir -p storage/framework/sessions",
   "mkdir -p storage/framework/views",
@@ -43,13 +41,8 @@ cmds = [
   "mkdir -p bootstrap/cache",
   "chmod -R 775 storage bootstrap/cache",
 
-  # ── Migrations (désactivable worker) ──
   "if [ \"$SKIP_MIGRATIONS\" != \"true\" ]; then php artisan migrate --force; fi",
-
-  # ── Storage link ──
   "php artisan storage:link || true",
-
-  # ── Optimisation Laravel ──
   "php artisan optimize:clear",
   "php artisan config:cache",
   "php artisan route:cache",
