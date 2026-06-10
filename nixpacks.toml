@@ -1,6 +1,7 @@
 [phases.setup]
 nixPkgs = [
   "php82",
+  "php82Packages.composer",
   "php82Extensions.bcmath",
   "php82Extensions.curl",
   "php82Extensions.dom",
@@ -21,13 +22,7 @@ nixPkgs = [
 
 [phases.install]
 cmds = [
-  # ── Composer installé dans le runtime nix directement ──
-  "nix-env -iA nixpkgs.composer",
-
-  # ── PHP deps ──
-  "composer install --no-dev --optimize-autoloader",
-
-  # ── Frontend ──
+  "COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader",
   "npm install",
   "npm run build"
 ]
@@ -40,7 +35,6 @@ cmds = [
   "mkdir -p storage/logs",
   "mkdir -p bootstrap/cache",
   "chmod -R 775 storage bootstrap/cache",
-
   "if [ \"$SKIP_MIGRATIONS\" != \"true\" ]; then php artisan migrate --force; fi",
   "php artisan storage:link || true",
   "php artisan optimize:clear",
