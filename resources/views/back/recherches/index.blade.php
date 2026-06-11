@@ -422,9 +422,9 @@
                 <thead>
                     <tr>
                         <th>Recherche</th>
+                        <th>Utilisateur</th>
                         <th>Statut</th>
-                        <th>Message</th>
-                        <th>Date</th>
+                        <th></th>Date</th>
                         <th style="width:80px;">Actions</th>
                     </tr>
                 </thead>
@@ -442,6 +442,16 @@
 
                             <div class="rch-muted">
                                 Recherche #{{ $recherche->id }}
+                            </div>
+                        </td>
+
+                        <td>
+                            <div class="rch-main" style="font-size:14px;">
+                                {{ $recherche->user?->name ?? 'Anonyme' }}
+                            </div>
+
+                            <div class="rch-muted">
+                                {{ $recherche->user?->email ?? 'Aucun e-mail' }}
                             </div>
                         </td>
 
@@ -464,12 +474,6 @@
                                 {{ ucfirst($recherche->statut ?? '-') }}
                             </span>
 
-                        </td>
-
-                        <td>
-                            <div class="rch-message">
-                                {{ $recherche->message ?? '-' }}
-                            </div>
                         </td>
 
                         <td>
