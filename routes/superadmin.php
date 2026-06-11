@@ -39,7 +39,6 @@ Route::middleware(['auth', 'verified'])->prefix('admin/superadmin')->name('admin
 
         Route::get('/export', [SuperAdminController::class, 'exportUsers'])
             ->name('export');
-
     });
 
     // Stop impersonate (hors prefix users car utilisable depuis n'importe où)
@@ -56,7 +55,6 @@ Route::middleware(['auth', 'verified'])->prefix('admin/superadmin')->name('admin
 
         Route::get('/imports', [SuperAdminController::class, 'importsHistory'])
             ->name('imports');
-
     });
 
     // ────────────────────────────────────────────────────────────
@@ -66,7 +64,6 @@ Route::middleware(['auth', 'verified'])->prefix('admin/superadmin')->name('admin
 
         Route::get('/', [SuperAdminController::class, 'payments'])
             ->name('index');
-
     });
 
     // ────────────────────────────────────────────────────────────
@@ -91,7 +88,6 @@ Route::middleware(['auth', 'verified'])->prefix('admin/superadmin')->name('admin
 
         Route::post('/cache', [SuperAdminController::class, 'purgeCache'])
             ->name('cache');
-
     });
 
     // ────────────────────────────────────────────────────────────
@@ -119,7 +115,6 @@ Route::middleware(['auth', 'verified'])->prefix('admin/superadmin')->name('admin
 
         Route::get('/db-stats', [SuperAdminController::class, 'dbStats'])
             ->name('db-stats');
-
     });
 
     // ────────────────────────────────────────────────────────────
@@ -138,7 +133,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin/superadmin')->name('admin
 
         Route::post('/toggle', [SuperAdminController::class, 'toggleMaintenance'])
             ->name('toggle');
-
     });
 
+Route::post('settings/toggle', [SuperAdminController::class, 'toggleSetting'])
+    ->name('settings.toggle');
 });

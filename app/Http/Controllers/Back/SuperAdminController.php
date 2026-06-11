@@ -12,6 +12,7 @@ use App\Http\Requests\Back\SuperAdmin\PurgeSessionsRequest;
 use App\Http\Requests\Back\SuperAdmin\PurgeLogsRequest;
 use App\Http\Requests\Back\SuperAdmin\ToggleMaintenanceRequest;
 use App\Models\User;
+use App\Models\AppSetting;
 use App\Models\Back\CsvImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -50,9 +51,9 @@ class SuperAdminController extends Controller
         $totalCredits   = User::sum('credits');
 
         $recentLogins   = User::whereNotNull('last_login_at')
-                            ->orderByDesc('last_login_at')
-                            ->take(15)
-                            ->get();
+            ->orderByDesc('last_login_at')
+            ->take(15)
+            ->get();
 
         $newUsersToday  = User::whereDate('created_at', today())->count();
         $newUsersWeek   = User::where('created_at', '>=', now()->subDays(7))->count();
@@ -61,11 +62,17 @@ class SuperAdminController extends Controller
         // Jobs en queue
         $pendingJobs = DB::table('jobs')->count();
         $failedJobs  = 0;
-        try { $failedJobs = DB::table('failed_jobs')->count(); } catch (\Throwable) {}
+        try {
+            $failedJobs = DB::table('failed_jobs')->count();
+        } catch (\Throwable) {
+        }
 
         // Sessions actives
         $activeSessions = 0;
-        try { $activeSessions = DB::table('sessions')->count(); } catch (\Throwable) {}
+        try {
+            $activeSessions = DB::table('sessions')->count();
+        } catch (\Throwable) {
+        }
 
         // Imports CSV
         $totalImports   = 0;
@@ -73,14 +80,26 @@ class SuperAdminController extends Controller
         try {
             $totalImports   = CsvImport::count();
             $pendingImports = CsvImport::whereIn('statut', ['en_attente', 'en_cours'])->count();
-        } catch (\Throwable) {}
+        } catch (\Throwable) {
+        }
 
         return view('back.security.superadmin.index', compact(
-            'totalUsers', 'activeUsers', 'adminUsers', 'superAdmins',
-            'premiumUsers', 'freeUsers', 'totalCredits',
-            'recentLogins', 'newUsersToday', 'newUsersWeek', 'newUsersMonth',
-            'pendingJobs', 'failedJobs', 'activeSessions',
-            'totalImports', 'pendingImports'
+            'totalUsers',
+            'activeUsers',
+            'adminUsers',
+            'superAdmins',
+            'premiumUsers',
+            'freeUsers',
+            'totalCredits',
+            'recentLogins',
+            'newUsersToday',
+            'newUsersWeek',
+            'newUsersMonth',
+            'pendingJobs',
+            'failedJobs',
+            'activeSessions',
+            'totalImports',
+            'pendingImports'
         ));
     }
 
@@ -99,10 +118,11 @@ class SuperAdminController extends Controller
 
         if ($request->filled('q')) {
             $s = $request->q;
-            $query->where(fn($q) =>
+            $query->where(
+                fn($q) =>
                 $q->where('name', 'like', "%$s%")
-                  ->orWhere('email', 'like', "%$s%")
-                  ->orWhere('phone', 'like', "%$s%")
+                    ->orWhere('email', 'like', "%$s%")
+                    ->orWhere('phone', 'like', "%$s%")
             );
         }
 
@@ -111,7 +131,7 @@ class SuperAdminController extends Controller
         }
 
         if ($request->filled('role')) {
-            match($request->role) {
+            match ($request->role) {
                 'superadmin' => $query->where('is_superadmin', true),
                 'admin'      => $query->where('is_admin', true),
                 'free'       => $query->where('is_admin', false),
@@ -231,7 +251,7 @@ class SuperAdminController extends Controller
 
         $query = User::query();
 
-        match($data['target']) {
+        match ($data['target']) {
             'free'       => $query->where('plan', 'free'),
             'premium'    => $query->where('plan', 'premium'),
             'enterprise' => $query->where('plan', 'enterprise'),
@@ -239,7 +259,7 @@ class SuperAdminController extends Controller
             default      => null
         };
 
-        $count = match($data['action']) {
+        $count = match ($data['action']) {
             'add'   => $query->increment('credits', (int) $data['amount']),
             'set'   => $query->update(['credits' => (int) $data['amount']]),
             'reset' => $query->update(['credits' => 0]),
@@ -287,10 +307,11 @@ class SuperAdminController extends Controller
 
         if ($request->filled('q')) {
             $s = $request->q;
-            $query->where(fn($q) =>
+            $query->where(
+                fn($q) =>
                 $q->where('name', 'like', "%$s%")
-                  ->orWhere('email', 'like', "%$s%")
-                  ->orWhere('last_login_ip', 'like', "%$s%")
+                    ->orWhere('email', 'like', "%$s%")
+                    ->orWhere('last_login_ip', 'like', "%$s%")
             );
         }
 
@@ -351,12 +372,12 @@ class SuperAdminController extends Controller
                 'total_transactions' => DB::table('credit_transactions')->count(),
                 'total_amount'       => DB::table('credit_transactions')->sum('amount') ?? 0,
                 'this_month'         => DB::table('credit_transactions')
-                                          ->where('created_at', '>=', now()->startOfMonth())
-                                          ->sum('amount') ?? 0,
+                    ->where('created_at', '>=', now()->startOfMonth())
+                    ->sum('amount') ?? 0,
                 'recent'             => DB::table('credit_transactions')
-                                          ->latest()
-                                          ->take(20)
-                                          ->get(),
+                    ->latest()
+                    ->take(20)
+                    ->get(),
             ];
         } catch (\Throwable) {
             $stats = [
@@ -423,7 +444,7 @@ class SuperAdminController extends Controller
         try {
             $query = DB::table('recherches');
 
-            $deleted = match($data['period']) {
+            $deleted = match ($data['period']) {
                 '7days'  => $query->where('created_at', '<', now()->subDays(7))->delete(),
                 '30days' => $query->where('created_at', '<', now()->subDays(30))->delete(),
                 '90days' => $query->where('created_at', '<', now()->subDays(90))->delete(),
@@ -455,25 +476,25 @@ class SuperAdminController extends Controller
         try {
             $query = CsvImport::query();
 
-            $count = match($data['mode']) {
-                'terminated' => (function() use ($query) {
+            $count = match ($data['mode']) {
+                'terminated' => (function () use ($query) {
                     $q = $query->where('statut', 'termine');
                     $c = $q->count();
                     $q->update(['csv_content' => null, 'xlsx_content' => null]);
                     return $c;
                 })(),
-                'older30' => (function() use ($query) {
+                'older30' => (function () use ($query) {
                     $q = $query->where('created_at', '<', now()->subDays(30));
                     $c = $q->count();
                     $q->update(['csv_content' => null, 'xlsx_content' => null]);
                     return $c;
                 })(),
-                'all' => (function() use ($query) {
+                'all' => (function () use ($query) {
                     $c = CsvImport::count();
                     CsvImport::query()->update(['csv_content' => null, 'xlsx_content' => null]);
                     return $c;
                 })(),
-                'delete_all' => (function() use ($query) {
+                'delete_all' => (function () use ($query) {
                     $q = $query->where('created_at', '<', now()->subDays(30));
                     $c = $q->count();
                     $q->delete();
@@ -661,8 +682,14 @@ class SuperAdminController extends Controller
                 'sessions' => 0,
             ];
 
-            try { $queueStats['failed']   = DB::table('failed_jobs')->count(); } catch (\Throwable) {}
-            try { $queueStats['sessions'] = DB::table('sessions')->count(); } catch (\Throwable) {}
+            try {
+                $queueStats['failed']   = DB::table('failed_jobs')->count();
+            } catch (\Throwable) {
+            }
+            try {
+                $queueStats['sessions'] = DB::table('sessions')->count();
+            } catch (\Throwable) {
+            }
 
             // Memory PHP
             $memoryUsage = round(memory_get_usage(true) / 1024 / 1024, 2);
@@ -707,12 +734,12 @@ class SuperAdminController extends Controller
                 $months[] = [
                     'month'  => $date->format('M Y'),
                     'users'  => User::whereYear('created_at', $date->year)
-                                    ->whereMonth('created_at', $date->month)
-                                    ->count(),
-                    'premium'=> User::whereIn('plan', ['premium','enterprise'])
-                                    ->whereYear('created_at', $date->year)
-                                    ->whereMonth('created_at', $date->month)
-                                    ->count(),
+                        ->whereMonth('created_at', $date->month)
+                        ->count(),
+                    'premium' => User::whereIn('plan', ['premium', 'enterprise'])
+                        ->whereYear('created_at', $date->year)
+                        ->whereMonth('created_at', $date->month)
+                        ->count(),
                 ];
             }
 
@@ -767,7 +794,10 @@ class SuperAdminController extends Controller
             $failed   = 0;
             $byQueue  = DB::table('jobs')->select('queue', DB::raw('count(*) as count'))->groupBy('queue')->get();
 
-            try { $failed = DB::table('failed_jobs')->count(); } catch (\Throwable) {}
+            try {
+                $failed = DB::table('failed_jobs')->count();
+            } catch (\Throwable) {
+            }
 
             $recentFailed = collect();
             try {
@@ -784,7 +814,8 @@ class SuperAdminController extends Controller
                             'exception'  => substr($job->exception ?? '', 0, 120),
                         ];
                     });
-            } catch (\Throwable) {}
+            } catch (\Throwable) {
+            }
 
             return response()->json([
                 'success'       => true,
@@ -814,7 +845,7 @@ class SuperAdminController extends Controller
         try {
             $query = User::query();
 
-            match($data['target']) {
+            match ($data['target']) {
                 'premium' => $query->whereIn('plan', ['premium', 'enterprise']),
                 'free'    => $query->where('plan', 'free'),
                 'admins'  => $query->where('is_admin', true),
@@ -840,7 +871,8 @@ class SuperAdminController extends Controller
                         'updated_at'      => now(),
                     ]);
                     $count++;
-                } catch (\Throwable) {}
+                } catch (\Throwable) {
+                }
             }
 
             Log::info("SuperAdmin: notification broadcast [{$data['target']}] — {$count} users notifiés par " . Auth::user()->name);
@@ -867,9 +899,19 @@ class SuperAdminController extends Controller
         $this->guardSuperAdmin();
 
         $users = User::orderBy('id')->get([
-            'id', 'name', 'email', 'phone', 'plan', 'credits',
-            'is_admin', 'is_superadmin', 'is_active',
-            'email_verified_at', 'last_login_at', 'last_login_ip', 'created_at'
+            'id',
+            'name',
+            'email',
+            'phone',
+            'plan',
+            'credits',
+            'is_admin',
+            'is_superadmin',
+            'is_active',
+            'email_verified_at',
+            'last_login_at',
+            'last_login_ip',
+            'created_at'
         ]);
 
         $csv  = "ID,Nom,Email,Téléphone,Plan,Crédits,Admin,Superadmin,Actif,Email vérifié,Dernière connexion,IP,Créé le\n";
@@ -955,6 +997,36 @@ class SuperAdminController extends Controller
             'app_url'      => config('app.url'),
             'php_version'  => PHP_VERSION,
             'laravel'      => app()->version(),
+        ]);
+    }
+
+
+    /**
+     * Toggle un feature flag on/off
+     * POST /admin/superadmin/settings/toggle
+     */
+    public function toggleSetting(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $key   = $request->input('key');
+        $value = $request->boolean('value') ? '1' : '0';
+
+        // Whitelist des clés autorisées
+        $allowed = [
+            'advanced_search_enabled',
+            // Ajoute ici d'autres feature flags si besoin
+        ];
+
+        if (!in_array($key, $allowed, true)) {
+            return response()->json(['success' => false, 'message' => 'Clé non autorisée'], 422);
+        }
+
+        AppSetting::set($key, $value);
+
+        return response()->json([
+            'success' => true,
+            'key'     => $key,
+            'enabled' => $value === '1',
+            'message' => $value === '1' ? 'Fonctionnalité activée' : 'Fonctionnalité désactivée',
         ]);
     }
 }

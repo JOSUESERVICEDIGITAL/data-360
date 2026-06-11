@@ -845,6 +845,7 @@
 @include('back.security.superadmin.partials.modal-purge-recherches')
 @include('back.security.superadmin.partials.modal-user-growth')
 @include('back.security.superadmin.partials.modal-export')
+@include('back.security.superadmin.partials.modal-feature-flags')
 
 {{-- ═══════════════════════════════════════════════════════
      JAVASCRIPT — Étapes 2 & 3 : AJAX réel sur toutes les actions
