@@ -432,12 +432,13 @@
             </button>
         </form>
 
-        {{-- ── Recherche avancée — visible uniquement pour premium/enterprise ── --}}
+      {{-- ── Recherche avancée — visible uniquement pour premium/enterprise ── --}}
         @php
-            $hasPremiumAccess = Auth::check() && in_array(Auth::user()->plan, ['premium', 'enterprise']);
+            $hasPremiumAccess      = Auth::check() && in_array(Auth::user()->plan, ['premium', 'enterprise']);
+            $advancedSearchEnabled = \App\Models\AppSetting::isEnabled('advanced_search_enabled');
         @endphp
 
-        @if($hasPremiumAccess)
+        @if($hasPremiumAccess && $advancedSearchEnabled)
             {{-- Toggle accordéon --}}
             <div class="advanced-toggle-wrap">
                 <button type="button" class="advanced-toggle" id="advancedToggle" aria-expanded="false" aria-controls="advancedPanel">
@@ -537,6 +538,15 @@
                         </div>
                     </form>
                 </div>
+            </div>
+
+        @elseif($hasPremiumAccess && !$advancedSearchEnabled)
+            {{-- Premium mais fonctionnalité désactivée par le superadmin --}}
+            <div class="advanced-toggle-wrap">
+                <span class="premium-lock-banner" style="cursor:default; opacity:0.65;">
+                    <i class="fa-solid fa-wrench"></i>
+                    Recherche avancée temporairement indisponible
+                </span>
             </div>
 
         @elseif(Auth::check())
