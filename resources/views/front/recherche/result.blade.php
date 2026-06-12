@@ -27,15 +27,42 @@
 
         $copros = collect($resultat['coproprietes'] ?? []);
 
-        // ── Copropriété principale : meilleur score parmi celles avec immatriculation ──
-        $coproPrincipale = $copros
-            ->filter(fn($copro) => dr_value($copro, ['numero_immatriculation'], null) !== null)
-            ->sortByDesc(fn($copro) => (int) dr_value($copro, ['score_match'], 0))
+        // ════════════════════════════════════════════════════════
+        // DÉTECTION REPRÉSENTANT — VERSION INTELLIGENTE
+        // Priorité : copro AVEC représentant > copro avec immat > première
+        // ════════════════════════════════════════════════════════
+        $coprosAvecRep = $copros->filter(function ($copro) {
+            $hasRepNom  = !empty(dr_value($copro, [
+                'representant_legal_nom',
+                'syndic_nom',
+                'raison_sociale_representant_legal',
+                'identification_representant_legal',
+            ], null));
+            $hasSiren   = !empty(dr_value($copro, ['siren_syndic'], null));
+            $hasSiret   = !empty(dr_value($copro, ['siret_syndic', 'siret_representant_legal'], null));
+            return $hasRepNom || $hasSiren || $hasSiret;
+        });
+
+        // Prendre la copro avec représentant (meilleur score), sinon fallback
+        $coproPrincipale = $coprosAvecRep
+            ->sortByDesc(fn($c) => (int) dr_value($c, ['score_match'], 0))
             ->first()
+            ?? $copros
+                ->filter(fn($c) => dr_value($c, ['numero_immatriculation'], null) !== null)
+                ->sortByDesc(fn($c) => (int) dr_value($c, ['score_match'], 0))
+                ->first()
             ?? $copros->first();
 
-        $adresseEnregistree  = !empty($coproPrincipale);
-        $representantNom     = $coproPrincipale
+        // ── Détection des multiples immatriculations ──────────
+        $coprosImmatriculees = $copros->filter(
+            fn($c) => dr_value($c, ['numero_immatriculation'], null) !== null
+        );
+        $nbImmatriculations  = $coprosImmatriculees->count();
+        $hasMultipleImmat    = $nbImmatriculations > 1;
+
+        // ── Représentant ──────────────────────────────────────
+        $adresseEnregistree = !empty($coproPrincipale);
+        $representantNom    = $coproPrincipale
             ? dr_value($coproPrincipale, [
                 'representant_legal_nom',
                 'syndic_nom',
@@ -43,11 +70,27 @@
                 'identification_representant_legal',
               ], null)
             : null;
-        $sirenSyndic         = $coproPrincipale ? dr_value($coproPrincipale, ['siren_syndic'], null) : null;
-        $siretSyndic         = $coproPrincipale ? dr_value($coproPrincipale, ['siret_syndic', 'siret_representant_legal'], null) : null;
-        $representantConnu   = $adresseEnregistree && (!empty($representantNom) || !empty($sirenSyndic) || !empty($siretSyndic));
+        $sirenSyndic        = $coproPrincipale ? dr_value($coproPrincipale, ['siren_syndic'], null) : null;
+        $siretSyndic        = $coproPrincipale ? dr_value($coproPrincipale, ['siret_syndic', 'siret_representant_legal'], null) : null;
+        $representantConnu  = $adresseEnregistree && (!empty($representantNom) || !empty($sirenSyndic) || !empty($siretSyndic));
 
-        // ── Syndics affichés ────────────────────────────────────
+        // Si pas de représentant sur la copro principale,
+        // chercher dans TOUTES les copros (y compris celles non immatriculées)
+        if (!$representantConnu && $copros->isNotEmpty()) {
+            $anyRepNom   = $copros->filter(fn($c) => !empty(dr_value($c, ['representant_legal_nom','syndic_nom'], null)))->first();
+            $anySiren    = $copros->filter(fn($c) => !empty(dr_value($c, ['siren_syndic'], null)))->first();
+            if ($anyRepNom || $anySiren) {
+                $representantConnu = true;
+                if (!$representantNom && $anyRepNom) {
+                    $representantNom = dr_value($anyRepNom, ['representant_legal_nom','syndic_nom']);
+                }
+                if (!$sirenSyndic && $anySiren) {
+                    $sirenSyndic = dr_value($anySiren, ['siren_syndic']);
+                }
+            }
+        }
+
+        // ── Syndics ───────────────────────────────────────────
         $syndicsAffiches = collect($resultat['syndics'] ?? []);
         foreach ($copros as $copro) {
             if (is_object($copro) && isset($copro->syndics)) {
@@ -63,27 +106,26 @@
             })
             ->values();
 
-        // ── QPV / ZFU ───────────────────────────────────────────
+        // ── QPV / ZFU ─────────────────────────────────────────
         $qpv        = $resultat['qpv'] ?? null;
         $qpvChecks  = collect($qpv['checks'] ?? []);
         $hasQpv2024 = $qpvChecks->contains(fn($c) => $c['result']['qp_2024'] ?? false);
         $hasQpv2015 = $qpvChecks->contains(fn($c) => $c['result']['qp_2015'] ?? false);
         $hasZfu     = $qpvChecks->contains(fn($c) => $c['result']['zfu']     ?? false);
         $hasAnyZone = $hasQpv2024 || $hasQpv2015 || $hasZfu;
-        $qpvEligible = !$hasAnyZone;
 
-        // ── Compteurs ───────────────────────────────────────────
-        $batimentsCount    = count($resultat['batiments']  ?? []);
-        $cadastreCount     = count($resultat['cadastre']   ?? []);
-        $coprosCount       = count($resultat['coproprietes'] ?? []);
-        $syndicsCount      = $syndicsAffiches->count();
-        $proprietairesCount= count($resultat['proprietaires_bdnb'] ?? []);
+        // ── Compteurs ─────────────────────────────────────────
+        $batimentsCount     = count($resultat['batiments']  ?? []);
+        $cadastreCount      = count($resultat['cadastre']   ?? []);
+        $coprosCount        = count($resultat['coproprietes'] ?? []);
+        $syndicsCount       = $syndicsAffiches->count();
+        $proprietairesCount = count($resultat['proprietaires_bdnb'] ?? []);
 
-        // ── RNB ─────────────────────────────────────────────────
-        $rnbData     = $resultat['rnb'] ?? null;
-        $rnbId       = null;
-        $rnbAddresses= collect();
-        $rnbStatus   = null;
+        // ── RNB ───────────────────────────────────────────────
+        $rnbData      = $resultat['rnb'] ?? null;
+        $rnbId        = null;
+        $rnbAddresses = collect();
+        $rnbStatus    = null;
 
         if ($rnbData) {
             function extractRnbAddresses($data, &$addresses, &$rnbId, &$rnbStatus)
@@ -91,11 +133,9 @@
                 if (!is_array($data)) return;
                 if (isset($data['rnb_id'])  && !$rnbId)    $rnbId    = $data['rnb_id'];
                 if (isset($data['status']) && !$rnbStatus) $rnbStatus= $data['status'];
-
                 if (isset($data['addresses']) && is_array($data['addresses'])) {
                     foreach ($data['addresses'] as $addr) {
-                        $label = $addr['label']
-                            ?? $addr['adresse']
+                        $label = $addr['label'] ?? $addr['adresse']
                             ?? trim(collect([
                                 $addr['street_number'] ?? null,
                                 $addr['street_rep']    ?? null,
@@ -116,7 +156,6 @@
                     extractRnbAddresses($value, $addresses, $rnbId, $rnbStatus);
                 }
             }
-
             extractRnbAddresses($rnbData, $rnbAddresses, $rnbId, $rnbStatus);
             $rnbAddresses = $rnbAddresses
                 ->filter(fn($a) => !empty($a['adresse']) && $a['adresse'] !== '-')
@@ -145,80 +184,53 @@
             --dr-warning-bg:  #fff7ed;
             --dr-white:       #ffffff;
         }
-
         .dr-page {
             background: radial-gradient(circle at top left, rgba(0,83,179,.08), transparent 35%),
                         linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-            min-height: 100vh;
-            padding: 32px 0 70px;
-            color: var(--dr-primary);
+            min-height: 100vh; padding: 32px 0 70px; color: var(--dr-primary);
         }
         .dr-container { max-width: 1280px; margin: 0 auto; padding: 0 20px; }
-
-        /* ── Hero ─────────────────────────────────────────── */
         .dr-hero {
-            display: grid;
-            grid-template-columns: 1.4fr 0.8fr;
-            gap: 22px;
+            display: grid; grid-template-columns: 1.4fr 0.8fr; gap: 22px;
             background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #0053b3 100%);
-            color: white;
-            border-radius: 30px;
-            padding: 34px;
-            margin-bottom: 22px;
-            position: relative;
-            overflow: hidden;
+            color: white; border-radius: 30px; padding: 34px; margin-bottom: 22px;
+            position: relative; overflow: hidden;
         }
         .dr-hero:after {
-            content: "";
-            position: absolute;
-            right: -120px; top: -120px;
-            width: 320px; height: 320px;
-            border-radius: 50%;
+            content: ""; position: absolute; right: -120px; top: -120px;
+            width: 320px; height: 320px; border-radius: 50%;
             background: rgba(255,255,255,.08);
         }
         .dr-hero-kicker {
             display: inline-flex; align-items: center; gap: 8px;
-            background: rgba(255,255,255,.13);
-            border: 1px solid rgba(255,255,255,.18);
-            padding: 8px 14px; border-radius: 40px;
-            font-size: 13px; font-weight: 700; margin-bottom: 18px;
+            background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.18);
+            padding: 8px 14px; border-radius: 40px; font-size: 13px; font-weight: 700; margin-bottom: 18px;
         }
-        .dr-hero h1 {
-            font-size: clamp(30px,4vw,46px); font-weight: 900;
-            margin: 0 0 14px; letter-spacing: -.02em;
-        }
-        .dr-hero p { color: rgba(255,255,255,.82); font-size: 16px; line-height: 1.6; max-width: 550px; }
+        .dr-hero h1 { font-size: clamp(30px,4vw,46px); font-weight: 900; margin: 0 0 14px; letter-spacing: -.02em; }
+        .dr-hero p  { color: rgba(255,255,255,.82); font-size: 16px; line-height: 1.6; max-width: 550px; }
         .dr-hero-side {
             background: rgba(255,255,255,.1); backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,.18);
-            border-radius: 24px; padding: 22px;
+            border: 1px solid rgba(255,255,255,.18); border-radius: 24px; padding: 22px;
         }
         .dr-side-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,.7); margin-bottom: 6px; }
         .dr-side-value { font-size: 18px; font-weight: 800; margin-bottom: 16px; word-break: break-word; }
         .dr-side-meta  { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid rgba(255,255,255,.15); padding-top: 14px; }
         .dr-side-meta span { display: flex; justify-content: space-between; font-size: 13px; color: rgba(255,255,255,.8); }
-
-        /* ── Tabs ─────────────────────────────────────────── */
         .dr-tabs {
             position: sticky; top: 20px; z-index: 100;
             display: flex; flex-wrap: wrap; gap: 8px;
             background: rgba(255,255,255,.96); backdrop-filter: blur(12px);
             border: 1px solid var(--dr-border); border-radius: 60px;
-            padding: 8px 16px; margin-bottom: 24px;
-            box-shadow: 0 8px 24px rgba(0,0,0,.06);
+            padding: 8px 16px; margin-bottom: 24px; box-shadow: 0 8px 24px rgba(0,0,0,.06);
         }
         .dr-tab-btn {
             display: inline-flex; align-items: center; gap: 8px;
-            padding: 10px 20px; border-radius: 40px;
-            font-size: .8rem; font-weight: 700;
-            background: transparent; border: none; cursor: pointer;
-            transition: all .2s; color: var(--dr-secondary);
+            padding: 10px 20px; border-radius: 40px; font-size: .8rem; font-weight: 700;
+            background: transparent; border: none; cursor: pointer; transition: all .2s; color: var(--dr-secondary);
         }
         .dr-tab-btn i { font-size: .9rem; }
         .dr-tab-btn:hover  { background: #e6f0ff; color: var(--dr-blue); }
         .dr-tab-btn.active { background: var(--dr-blue); color: white; box-shadow: 0 2px 8px rgba(0,83,179,.3); }
-
-        /* ── Stats ────────────────────────────────────────── */
         .dr-stats { display: grid; grid-template-columns: repeat(6,1fr); gap: 16px; margin-bottom: 24px; }
         .dr-stat-card {
             background: white; border: 1px solid var(--dr-border);
@@ -234,13 +246,10 @@
         .dr-stat-value { font-size: 1.6rem; font-weight: 800; color: var(--dr-primary); }
         .dr-stat-value.success { color: var(--dr-success); }
         .dr-stat-value.danger  { color: var(--dr-danger); }
-
-        /* ── Panels ───────────────────────────────────────── */
         .dr-panel {
             background: white; border: 1px solid var(--dr-border);
             border-radius: 26px; padding: 28px;
-            box-shadow: 0 12px 32px rgba(0,0,0,.04);
-            margin-bottom: 24px; display: none;
+            box-shadow: 0 12px 32px rgba(0,0,0,.04); margin-bottom: 24px; display: none;
         }
         .dr-panel.active { display: block; }
         .dr-panel-header {
@@ -256,19 +265,14 @@
         }
         .dr-panel-title h2 { font-size: 1.4rem; font-weight: 800; color: var(--dr-primary); margin-bottom: 4px; }
         .dr-panel-title p  { color: var(--dr-muted); font-size: .85rem; }
-
-        /* ── Status badges ────────────────────────────────── */
         .dr-status {
             display: inline-flex; align-items: center; gap: 8px;
             padding: 8px 16px; border-radius: 40px;
-            font-size: .75rem; font-weight: 800;
-            text-transform: uppercase; letter-spacing: .5px;
+            font-size: .75rem; font-weight: 800; text-transform: uppercase; letter-spacing: .5px;
         }
         .dr-status.success { background: var(--dr-success-bg); color: var(--dr-success); }
         .dr-status.danger  { background: var(--dr-danger-bg);  color: var(--dr-danger); }
         .dr-status.warning { background: var(--dr-warning-bg); color: var(--dr-warning); }
-
-        /* ── Grid & Fields ────────────────────────────────── */
         .dr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 14px; }
         .dr-field {
             background: var(--dr-soft); border: 1px solid var(--dr-border);
@@ -283,8 +287,6 @@
         .dr-field-label i { font-size: .7rem; color: var(--dr-muted); opacity: .6; }
         .dr-field-value   { font-size: .9rem; font-weight: 700; color: var(--dr-primary); word-break: break-word; }
         .dr-field-value code { background: var(--dr-border); padding: 2px 6px; border-radius: 8px; font-size: .75rem; }
-
-        /* ── Records ──────────────────────────────────────── */
         .dr-record { border: 1px solid var(--dr-border); border-radius: 20px; padding: 18px; margin-top: 16px; background: white; }
         .dr-record-header {
             display: flex; justify-content: space-between; align-items: center;
@@ -292,21 +294,15 @@
             padding-bottom: 12px; border-bottom: 1px solid var(--dr-border);
         }
         .dr-record-title { font-size: 1rem; font-weight: 800; color: var(--dr-primary); }
-
-        /* ── Toast ────────────────────────────────────────── */
         .dr-toast {
             position: fixed; bottom: 30px; right: 30px;
-            background: #1e293b; color: white;
-            padding: 12px 24px; border-radius: 12px;
+            background: #1e293b; color: white; padding: 12px 24px; border-radius: 12px;
             font-size: .85rem; font-weight: 500; z-index: 1000;
-            opacity: 0; transform: translateY(20px);
-            transition: all .3s; pointer-events: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,.15);
+            opacity: 0; transform: translateY(20px); transition: all .3s;
+            pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,.15);
         }
         .dr-toast.show { opacity: 1; transform: translateY(0); }
         .dr-toast i    { margin-right: 8px; color: #10b981; }
-
-        /* ── Misc ─────────────────────────────────────────── */
         .dr-empty { background: var(--dr-soft); border: 1px dashed var(--dr-border); border-radius: 18px; padding: 24px; text-align: center; color: var(--dr-muted); }
         .dr-cta   { background: linear-gradient(135deg,#0f172a 0%,#0053b3 100%); border-radius: 28px; padding: 40px; text-align: center; color: white; }
         .dr-cta h3 { font-size: 1.8rem; font-weight: 800; margin-bottom: 12px; }
@@ -316,27 +312,35 @@
         .dr-btn-primary:hover { background: var(--dr-blue-dark); transform: translateY(-2px); }
         .dr-btn-white   { background: white; color: var(--dr-blue); }
         .dr-btn-white:hover { background: #eff6ff; transform: translateY(-2px); }
-        details   { margin-top: 16px; }
-        summary   { cursor: pointer; color: var(--dr-blue); font-weight: 700; font-size: .8rem; }
-        pre       { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 14px; overflow-x: auto; font-size: .7rem; margin-top: 12px; }
+        details { margin-top: 16px; }
+        summary { cursor: pointer; color: var(--dr-blue); font-weight: 700; font-size: .8rem; }
+        pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 14px; overflow-x: auto; font-size: .7rem; margin-top: 12px; }
         .info-box { background: #f0f9ff; border: 1px solid #b6d4fe; border-radius: 20px; padding: 16px; margin-top: 24px; display: flex; gap: 12px; align-items: flex-start; }
         .info-box i      { color: var(--dr-blue); font-size: 1.2rem; }
         .info-box strong { color: var(--dr-blue); }
         .info-box a      { color: var(--dr-blue); text-decoration: underline; }
 
-        /* ── Responsive ───────────────────────────────────── */
+        /* ── Badge multi-immatriculation ── */
+        .badge-multi-immat {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: #fef3c7; border: 1.5px solid #f59e0b;
+            color: #92400e; border-radius: 40px;
+            padding: 6px 14px; font-size: .75rem; font-weight: 800;
+            text-transform: uppercase; letter-spacing: .4px;
+        }
+
         @media (max-width: 960px) {
-            .dr-hero   { grid-template-columns: 1fr; }
-            .dr-stats  { grid-template-columns: repeat(3,1fr); }
-            .dr-tabs   { overflow-x: auto; flex-wrap: nowrap; border-radius: 20px; }
-            .dr-tab-btn{ white-space: nowrap; }
+            .dr-hero  { grid-template-columns: 1fr; }
+            .dr-stats { grid-template-columns: repeat(3,1fr); }
+            .dr-tabs  { overflow-x: auto; flex-wrap: nowrap; border-radius: 20px; }
+            .dr-tab-btn { white-space: nowrap; }
         }
         @media (max-width: 640px) {
             .dr-container { padding: 0 14px; }
             .dr-hero, .dr-panel, .dr-cta { padding: 20px; }
-            .dr-stats  { grid-template-columns: repeat(2,1fr); }
+            .dr-stats { grid-template-columns: repeat(2,1fr); }
             .dr-panel-header { flex-direction: column; }
-            .dr-grid   { grid-template-columns: 1fr; }
+            .dr-grid { grid-template-columns: 1fr; }
         }
     </style>
 
@@ -403,14 +407,15 @@
                     <div class="dr-stat-label">Copropriétés</div>
                     <div class="dr-stat-value">{{ $coprosCount }}</div>
                 </div>
-                <div class="dr-stat-card" data-tab="syndics">
+
+                {{-- ✅ FIX KPI : Entreprises → ouvre panel-proprietaires --}}
+                <div class="dr-stat-card" data-tab="proprietaires">
                     <div class="dr-stat-icon"><i class="fa-solid fa-briefcase"></i></div>
                     <div class="dr-stat-label">Entreprises</div>
                     <div class="dr-stat-value">{{ $syndicsCount + $proprietairesCount }}</div>
                 </div>
             </div>
 
-            {{-- ══ ADRESSE INTROUVABLE ══════════════════════════════════ --}}
             @if (empty($resultat['success']))
                 <div class="dr-panel active">
                     <div class="dr-panel-header">
@@ -476,7 +481,6 @@
                                 <div class="dr-field-value">{{ $qpv['candidates_tested'] ?? 0 }}</div>
                             </div>
                         </div>
-
                         @foreach (($qpv['checks'] ?? []) as $index => $check)
                             @php
                                 $candidate = $check['candidate'] ?? [];
@@ -531,6 +535,8 @@
 
             {{-- ══════════════════════════════════════════════════════════
                  SECTION 2 — REPRÉSENTANT LÉGAL
+                 ✅ FIX : détection intelligente sur toutes les copros
+                 ✅ NOUVEAU : badge double/multiple immatriculation
             ══════════════════════════════════════════════════════════ --}}
             <div class="dr-panel" id="panel-representant">
                 <div class="dr-panel-header">
@@ -541,15 +547,57 @@
                             <p>Synthèse du syndic ou représentant issu du RNIC</p>
                         </div>
                     </div>
-                    <div class="dr-status {{ $representantConnu ? 'success' : 'danger' }}">
-                        <i class="fa-solid {{ $representantConnu ? 'fa-circle-check' : 'fa-circle-exclamation' }}"></i>
-                        {{ $representantConnu ? 'Avec représentant légal' : 'Pas de représentant légal' }}
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+                        <div class="dr-status {{ $representantConnu ? 'success' : 'danger' }}">
+                            <i class="fa-solid {{ $representantConnu ? 'fa-circle-check' : 'fa-circle-exclamation' }}"></i>
+                            {{ $representantConnu ? 'Avec représentant légal' : 'Pas de représentant légal' }}
+                        </div>
+
+                        {{-- ✅ NOUVEAU — Badge multi-immatriculation --}}
+                        @if ($hasMultipleImmat)
+                            <div class="badge-multi-immat">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                @if ($nbImmatriculations === 2)
+                                    Double immatriculation détectée
+                                @else
+                                    {{ $nbImmatriculations }} immatriculations détectées
+                                @endif
+                            </div>
+                        @endif
                     </div>
                 </div>
+
                 <div class="dr-panel-body">
                     @if (!$adresseEnregistree)
                         <div class="dr-empty">Adresse non enregistrée dans le RNIC pour cette recherche.</div>
                     @else
+
+                        {{-- ✅ NOUVEAU — Alerte si plusieurs immatriculations --}}
+                        @if ($hasMultipleImmat)
+                            <div style="
+                                background: #fff7ed; border: 1.5px solid #f59e0b;
+                                border-radius: 16px; padding: 14px 18px; margin-bottom: 20px;
+                                display: flex; align-items: flex-start; gap: 12px;
+                            ">
+                                <i class="fa-solid fa-triangle-exclamation" style="color:#b45309; margin-top:2px; flex-shrink:0;"></i>
+                                <div>
+                                    <div style="font-weight:800; color:#92400e; font-size:.9rem; margin-bottom:4px;">
+                                        @if ($nbImmatriculations === 2)
+                                            Double immatriculation
+                                        @else
+                                            {{ $nbImmatriculations }} immatriculations
+                                        @endif
+                                        — plusieurs copropriétés pour cette adresse
+                                    </div>
+                                    <div style="font-size:.82rem; color:#b45309; line-height:1.5;">
+                                        {{ $nbImmatriculations }} copropriétés immatriculées trouvées à cette adresse.
+                                        Le représentant affiché est celui de la copropriété avec le meilleur score RNIC.
+                                        Consultez l'onglet <strong>Copropriétés</strong> pour voir toutes les immatriculations.
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+
                         <div class="dr-grid">
                             <div class="dr-field copyable" data-copy="{{ $adresse->adresse_complete ?? $q ?? '-' }}">
                                 <div class="dr-field-label">Adresse contrôlée <i class="fa-regular fa-copy"></i></div>
@@ -562,23 +610,23 @@
                                     {{ dr_value($coproPrincipale, ['code_postal']) }} {{ dr_value($coproPrincipale, ['ville']) }}
                                 </div>
                             </div>
-                            <div class="dr-field copyable" data-copy="{{ $representantConnu ? ($representantNom ?: '') : '' }}">
+                            <div class="dr-field copyable" data-copy="{{ $representantNom ?: '' }}">
                                 <div class="dr-field-label">Nom représentant / syndic <i class="fa-regular fa-copy"></i></div>
-                                <div class="dr-field-value">{{ $representantConnu ? ($representantNom ?: '-') : '-' }}</div>
+                                <div class="dr-field-value">{{ $representantNom ?: '-' }}</div>
                             </div>
-                            <div class="dr-field copyable" data-copy="{{ $representantConnu ? dr_value($coproPrincipale, ['representant_legal_type','type_syndic']) : '' }}">
+                            <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale, ['representant_legal_type','type_syndic']) }}">
                                 <div class="dr-field-label">Type représentant <i class="fa-regular fa-copy"></i></div>
                                 <div class="dr-field-value">
-                                    {{ $representantConnu ? dr_value($coproPrincipale, ['representant_legal_type','type_syndic']) : '-' }}
+                                    {{ dr_value($coproPrincipale, ['representant_legal_type','type_syndic']) }}
                                 </div>
                             </div>
-                            <div class="dr-field copyable" data-copy="{{ $representantConnu ? ($sirenSyndic ?: '') : '' }}">
+                            <div class="dr-field copyable" data-copy="{{ $sirenSyndic ?: '' }}">
                                 <div class="dr-field-label">SIREN syndic <i class="fa-regular fa-copy"></i></div>
-                                <div class="dr-field-value"><code>{{ $representantConnu ? ($sirenSyndic ?: '-') : '-' }}</code></div>
+                                <div class="dr-field-value"><code>{{ $sirenSyndic ?: '-' }}</code></div>
                             </div>
-                            <div class="dr-field copyable" data-copy="{{ $representantConnu ? ($siretSyndic ?: '') : '' }}">
+                            <div class="dr-field copyable" data-copy="{{ $siretSyndic ?: '' }}">
                                 <div class="dr-field-label">SIRET syndic <i class="fa-regular fa-copy"></i></div>
-                                <div class="dr-field-value"><code>{{ $representantConnu ? ($siretSyndic ?: '-') : '-' }}</code></div>
+                                <div class="dr-field-value"><code>{{ $siretSyndic ?: '-' }}</code></div>
                             </div>
                             <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale, ['numero_immatriculation']) }}">
                                 <div class="dr-field-label">Immatriculation <i class="fa-regular fa-copy"></i></div>
@@ -597,6 +645,45 @@
                                 <div class="dr-field-value">{{ dr_value($coproPrincipale, ['score_match']) }}</div>
                             </div>
                         </div>
+
+                        {{-- ✅ NOUVEAU — Liste des autres copros avec représentant --}}
+                        @if ($hasMultipleImmat)
+                            <h3 style="margin:24px 0 12px; font-size:.95rem; font-weight:800; color:var(--dr-primary);">
+                                <i class="fa-solid fa-list-check" style="color:var(--dr-blue);"></i>
+                                Toutes les immatriculations ({{ $nbImmatriculations }})
+                            </h3>
+                            @foreach ($coprosImmatriculees as $idx => $c)
+                                @php
+                                    $cRepNom   = dr_value($c, ['representant_legal_nom','syndic_nom'], null);
+                                    $cSiren    = dr_value($c, ['siren_syndic'], null);
+                                    $cHasRep   = !empty($cRepNom) || !empty($cSiren);
+                                @endphp
+                                <div style="
+                                    display:flex; align-items:center; gap:14px;
+                                    background: {{ $cHasRep ? 'var(--dr-success-bg)' : 'var(--dr-soft)' }};
+                                    border: 1px solid {{ $cHasRep ? '#86efac' : 'var(--dr-border)' }};
+                                    border-radius: 14px; padding: 12px 16px; margin-bottom: 8px;
+                                ">
+                                    <div style="font-size:1.2rem; color: {{ $cHasRep ? 'var(--dr-success)' : 'var(--dr-muted)' }}">
+                                        <i class="fa-solid {{ $cHasRep ? 'fa-circle-check' : 'fa-circle-xmark' }}"></i>
+                                    </div>
+                                    <div style="flex:1; min-width:0;">
+                                        <div style="font-weight:800; font-size:.85rem; color:var(--dr-primary);">
+                                            {{ dr_value($c, ['nom_copropriete','nom_usage_copropriete'], 'Copropriété ' . ($idx+1)) }}
+                                        </div>
+                                        <div style="font-size:.75rem; color:var(--dr-muted); margin-top:2px;">
+                                            N° {{ dr_value($c, ['numero_immatriculation'], '-') }}
+                                            @if($cRepNom) — Représentant : {{ $cRepNom }} @endif
+                                            @if($cSiren)  — SIREN : {{ $cSiren }} @endif
+                                            @if(!$cHasRep) — Pas de représentant légal @endif
+                                        </div>
+                                    </div>
+                                    <div style="font-size:.75rem; font-weight:800; color: {{ $cHasRep ? 'var(--dr-success)' : 'var(--dr-muted)' }}">
+                                        Score {{ dr_value($c, ['score_match'], '-') }}
+                                    </div>
+                                </div>
+                            @endforeach
+                        @endif
                     @endif
                 </div>
             </div>
@@ -674,7 +761,6 @@
                                 <div class="dr-field-value">{{ $rnbAddressesCount }}</div>
                             </div>
                         </div>
-
                         @if ($rnbAddressesCount > 0)
                             <h3 style="margin:28px 0 16px;font-size:1rem;font-weight:800;color:var(--dr-primary);">
                                 <i class="fa-solid fa-list"></i> Toutes les adresses liées à ce RNB
@@ -709,7 +795,6 @@
                                 @endforeach
                             </div>
                         @endif
-
                         <div class="info-box">
                             <i class="fa-solid fa-circle-info"></i>
                             <div>
@@ -968,6 +1053,12 @@
                             <p>Registre National d'Immatriculation des Copropriétés</p>
                         </div>
                     </div>
+                    @if ($hasMultipleImmat)
+                        <div class="badge-multi-immat">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            {{ $nbImmatriculations }} immatriculations
+                        </div>
+                    @endif
                 </div>
                 <div class="dr-panel-body">
                     @forelse (($resultat['coproprietes'] ?? []) as $copro)
@@ -1124,9 +1215,9 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            const tabBtns  = document.querySelectorAll('.dr-tab-btn');
-            const panels   = document.querySelectorAll('.dr-panel');
-            const statCards= document.querySelectorAll('.dr-stat-card');
+            const tabBtns   = document.querySelectorAll('.dr-tab-btn');
+            const panels    = document.querySelectorAll('.dr-panel');
+            const statCards = document.querySelectorAll('.dr-stat-card');
 
             function activateTab(tabId) {
                 panels.forEach(p => p.classList.remove('active'));
@@ -1153,7 +1244,6 @@
                 activateTab(lastTab);
             }
 
-            // ── Copier dans le presse-papier ──
             const toast = document.getElementById('copyToast');
             document.querySelectorAll('.copyable').forEach(field => {
                 field.addEventListener('click', function (e) {
