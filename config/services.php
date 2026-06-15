@@ -55,10 +55,10 @@ return [
         'token' => env('SIRENE_TOKEN'),
     ],
 
-   'pappers' => [
-    'base_url' => env('PAPPERS_BASE_URL', 'https://api.pappers.fr/v2'),
-    'api_key' => env('PAPPERS_API_KEY'),
-],
+    'pappers' => [
+        'base_url' => env('PAPPERS_BASE_URL', 'https://api.pappers.fr/v2'),
+        'api_key' => env('PAPPERS_API_KEY'),
+    ],
 
     'proxycheck' => [
         'api_key' => env('PROXYCHECK_API_KEY'),
@@ -83,5 +83,11 @@ return [
         'secret' => env('STRIPE_SECRET'),
     ],
 
-    
+    'copropriete' => [
+        'base_url'  => env('COPROPRIETE_BASE_URL', 'https://www.registre-coproprietes.gouv.fr/api/public'),
+        'timeout'   => env('COPROPRIETE_TIMEOUT', 15),
+        'cache_ttl' => env('COPROPRIETE_CACHE_TTL', 3600), // secondes (1h)
+    ],
+
+
 ];
