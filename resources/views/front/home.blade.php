@@ -575,7 +575,7 @@
 
 <section class="section">
     <div class="container center-text">
-        <h2>Transformez vos Données en Opportunités avec Data 360</h2>
+        <h2>Transformez vos Données en Opportunités avec le puissant Data 360</h2>
         <p>
             La solution de prospection intelligente basée sur l'adresse :
             bâtiment, copropriété, syndic, SIREN et potentiel commercial.
