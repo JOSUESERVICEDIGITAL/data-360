@@ -34,11 +34,11 @@ function poll() {
                 document.getElementById('downloadBtn').style.display = 'block';
             } else if (data.statut === 'erreur') {
                 errorCount++;
-                document.getElementById('statusText').textContent = '⚠️ Reprise après interruption… (tentative ' + errorCount + ')';
+                document.getElementById('statusText').textContent = '⚠️ Si le traitement échoue, actualisez la page… (tentative ' + errorCount + ')';
                 if (errorCount < maxErrorRetries) {
                     setTimeout(poll, 5000);
                 } else {
-                    document.getElementById('statusText').textContent = '❌ Erreur lors du traitement.';
+                    document.getElementById('statusText').textContent = '❌ Erreur lors du traitement. Actualisez la page…';
                 }
             } else {
                 errorCount = 0;
