@@ -67,26 +67,28 @@ class ImportRnic extends Command
 
             $numeroImmatriculation = $this->get($data, [
                 'numero_immatriculation',
+                'numero_d_immatriculation',          // ← format vu dans le nouveau CSV
                 'n_immatriculation',
                 'num_immatriculation',
-                'numero_d_immatriculation',
                 'n_d_immatriculation',
                 'immatriculation',
             ]);
 
             $adresse = $this->get($data, [
                 'adresse_reference',
+                'adresse_de_reference',               // ← nouveau CSV
                 'adresse_complete',
                 'adresse',
-                'adresse_de_reference',
                 'adresse_de_la_copropriete',
                 'adresse_copropriete',
                 'adresse_du_syndicat',
                 'localisation',
+                'numero_et_voie_adresse_de_reference', // ← nouveau CSV (numéro + voie)
             ]);
 
             $codePostal = $this->onlyDigits($this->get($data, [
                 'code_postal_adresse',
+                'code_postal_adresse_de_reference',   // ← nouveau CSV
                 'code_postal',
                 'cp',
                 'codepostal',
@@ -101,6 +103,7 @@ class ImportRnic extends Command
 
             $ville = $this->get($data, [
                 'commune_adresse',
+                'commune_adresse_de_reference',       // ← nouveau CSV
                 'nom_officiel_commune',
                 'ville',
                 'commune',
@@ -124,6 +127,7 @@ class ImportRnic extends Command
 
             $nomCopro = $this->get($data, [
                 'nom_usage_copropriete',
+                'nom_d_usage_de_la_copropriete',      // ← nouveau CSV
                 'nom_copropriete',
                 'nom_de_la_copropriete',
                 'nom_d_usage',
@@ -134,7 +138,9 @@ class ImportRnic extends Command
 
             $representant = $this->get($data, [
                 'raison_sociale_representant_legal',
+                'raison_sociale_du_representant_legal',          // ← nouveau CSV
                 'identification_representant_legal',
+                'identification_du_representant_legal_raison_sociale_et_le_numer', // ← nouveau CSV (tronqué)
                 'representant_legal_nom',
                 'representant_legal',
                 'nom_representant_legal',
@@ -153,6 +159,7 @@ class ImportRnic extends Command
 
             $siretSyndic = $this->onlyDigits($this->get($data, [
                 'siret_representant_legal',
+                'siret_du_representant_legal',         // ← nouveau CSV
                 'siret_syndic',
                 'siret_representant',
                 'siret_du_syndic',
@@ -163,6 +170,7 @@ class ImportRnic extends Command
                 'siren_syndic',
                 'siren_representant',
                 'siren_representant_legal',
+                'siren_du_representant_legal',         // ← cohérence nommage nouveau CSV
                 'siren_du_syndic',
                 'siren',
             ]));
@@ -178,6 +186,35 @@ class ImportRnic extends Command
             if ($representant && $sirenSyndic) {
                 $representant = trim(str_replace($sirenSyndic, '', $representant));
             }
+
+            // ── Mandat en cours / statut du mandat ──────────────
+            // Le nouveau CSV utilise "mandat_en_cours_dans_la_copropriete"
+            // au lieu de l'ancien "mandat_en_cours"
+            $mandatEnCours = $this->get($data, [
+                'mandat_en_cours',
+                'mandat_en_cours_dans_la_copropriete', // ← nouveau CSV
+                'statut',
+                'etat',
+                'statut_immatriculation',
+            ]);
+
+            // ── Date de fin du dernier mandat ───────────────────
+            $dateFinMandat = $this->get($data, [
+                'date_fin_dernier_mandat',
+                'date_de_fin_du_dernier_mandat',       // ← nouveau CSV
+            ]);
+
+            // ── Type de syndic (bénévole / professionnel / non connu) ──
+            $typeSyndic = $this->get($data, [
+                'type_syndic',
+                'type_de_syndic_benevole_professionnel_non_connu', // ← nouveau CSV
+            ]);
+
+            // ── Dernière mise à jour de la fiche ────────────────
+            $derniereMaj = $this->get($data, [
+                'date_derniere_maj',
+                'date_de_la_derniere_maj',             // ← nouveau CSV
+            ]);
 
             $adressesAssociees = $this->adressesAssociees($data);
 
@@ -203,14 +240,14 @@ class ImportRnic extends Command
                     'nombre_total_lots',
                     'nombre_lots_total',
                     'nb_lots_total',
-                    'nombre_total_de_lots',
+                    'nombre_total_de_lots',            // ← nouveau CSV
                     'total_lots',
                 ])),
 
                 'nombre_lots_habitation' => $this->toInt($this->get($data, [
                     'nombre_lots_habitation',
                     'nb_lots_habitation',
-                    'nombre_de_lots_a_usage_d_habitation',
+                    'nombre_de_lots_a_usage_d_habitation', // ← nouveau CSV
                     'lots_habitation',
                     'nombre_lots_usage_habitation',
                 ])),
@@ -231,7 +268,7 @@ class ImportRnic extends Command
 
                 'representant_legal_type' =>
                 $representant
-                    ? ($this->get($data, ['type_syndic']) ?: 'syndic')
+                    ? ($typeSyndic ?: 'syndic')
                     : 'inconnu',
 
                 'message_representant' =>
@@ -243,12 +280,7 @@ class ImportRnic extends Command
                 'siren_syndic' => $sirenSyndic,
                 'siret_syndic' => $siretSyndic,
 
-                'statut' => $this->get($data, [
-                    'mandat_en_cours',
-                    'statut',
-                    'etat',
-                    'statut_immatriculation',
-                ]),
+                'statut' => $mandatEnCours,
 
                 'date_immatriculation' => $this->normalizeDate(
                     $this->get($data, [
@@ -259,6 +291,16 @@ class ImportRnic extends Command
 
                 'raw_data' => json_encode(array_merge($data, [
                     'adresses_associees_liste' => $adressesAssociees,
+                    // Champs normalisés ajoutés pour fiabiliser les lectures
+                    // ultérieures côté Blade/Service, peu importe le nom de
+                    // colonne d'origine dans le CSV source.
+                    'mandat_en_cours'                   => $mandatEnCours,
+                    'date_fin_dernier_mandat'           => $dateFinMandat,
+                    'type_syndic'                        => $typeSyndic,
+                    'date_derniere_maj'                 => $derniereMaj,
+                    'raison_sociale_representant_legal' => $representant,
+                    'siret_representant_legal'          => $siretSyndic,
+                    'siren_representant_legal'          => $sirenSyndic,
                 ])),
 
                 'created_at' => now(),
@@ -299,6 +341,7 @@ class ImportRnic extends Command
         foreach (
             [
                 'adresse_reference',
+                'adresse_de_reference',               // ← nouveau CSV
                 'adresse_complete',
                 'adresse',
                 'adresse_complementaire_1',
