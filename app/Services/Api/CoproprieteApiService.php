@@ -258,6 +258,11 @@ class CoproprieteApiService
             ? $representantNom
             : null;
 
+        $rawData = $item['raw_data'] ?? $item;
+        if (is_string($rawData)) {
+            $rawData = json_decode($rawData, true) ?: [];
+        }
+
         return [
             'numero_immatriculation'    => $item['numero_immatriculation'] ?? null,
             'nom_copropriete'           => $item['nom_copropriete'] ?? null,
@@ -281,7 +286,7 @@ class CoproprieteApiService
             'adresses_associees_liste'  => $item['adresses_associees_liste'] ?? [],
             '_source'                   => $item['_source'] ?? 'local',
             '_lien_officiel'            => $item['_lien_officiel'] ?? null,
-            'raw_data'                  => $item,
+            'raw_data'                  => $rawData,
         ];
     }
 

@@ -577,7 +577,7 @@ $rnbAddressesCount = $rnbAddresses->count();
                             <i class="fa-solid fa-circle-check"></i>
                             Avec représentant légal
                         </div>
-                    @elseif ($mandatExpire)
+                    @elseif ($mandatExpire && $representantConnu)
                         <div class="dr-status warning">
                             <i class="fa-solid fa-clock-rotate-left"></i>
                             Mandat expiré
@@ -607,7 +607,7 @@ $rnbAddressesCount = $rnbAddresses->count();
                     <div class="dr-empty">Adresse non enregistrée dans le RNIC pour cette recherche.</div>
                 @else
 
-                    @if ($mandatExpire)
+                    @if ($mandatExpire && !empty($representantNom))
                         <div class="mandat-expire-banner">
                             <div class="icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
                             <div>
@@ -615,14 +615,9 @@ $rnbAddressesCount = $rnbAddresses->count();
                                     {{ $mandatEnCours ?? 'Mandat expiré sans successeur déclaré' }}
                                 </div>
                                 <div class="detail">
-                                    @if ($representantNom)
-                                        Le dernier syndic connu pour cette copropriété était
-                                        <strong>{{ $representantNom }}</strong>.
-                                        Son mandat n'a pas été renouvelé et aucun successeur n'a été déclaré au RNIC à ce jour.
-                                    @else
-                                        Cette copropriété n'a pas de représentant légal actif déclaré au RNIC.
-                                        Le dernier mandat a expiré sans qu'un successeur soit désigné.
-                                    @endif
+                                    Le dernier syndic connu pour cette copropriété était
+                                    <strong>{{ $representantNom }}</strong>.
+                                    Son mandat n'a pas été renouvelé et aucun successeur n'a été déclaré au RNIC à ce jour.
                                 </div>
                                 @if ($dateFinMandat)
                                     <div class="date-badge">
