@@ -16,7 +16,7 @@ const importId    = {{ $import->id }};
 const progressUrl = "{{ route('front.csv.progress', $import->id) }}";
 
 let errorCount = 0;
-const maxErrorRetries = 5;
+const maxErrorRetries = 20;
 
 function poll() {
     fetch(progressUrl)
