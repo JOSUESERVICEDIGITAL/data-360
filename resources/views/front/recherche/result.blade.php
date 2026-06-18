@@ -7,24 +7,43 @@
 @php
 function dr_value($model, array $keys, $default = '-')
 {
+    $raw = is_object($model)
+        ? ($model->raw_data ?? [])
+        : ($model['raw_data'] ?? []);
+
+    if (is_string($raw)) {
+        $raw = json_decode($raw, true) ?: [];
+    }
+
     foreach ($keys as $key) {
-        if (is_object($model) && isset($model->{$key}) && $model->{$key} !== null && $model->{$key} !== '') {
-            return $model->{$key};
-        }
-        if (is_array($model) && isset($model[$key]) && $model[$key] !== null && $model[$key] !== '') {
-            return $model[$key];
-        }
-        $raw = is_object($model) ? ($model->raw_data ?? []) : ($model['raw_data'] ?? []);
-        if (is_string($raw)) {
-            $raw = json_decode($raw, true) ?: [];
-        }
-        if (is_array($raw) && isset($raw[$key]) && $raw[$key] !== null && $raw[$key] !== '') {
+
+        // PRIORITÉ 1 : raw_data
+        if (is_array($raw)
+            && array_key_exists($key, $raw)
+            && $raw[$key] !== null
+            && $raw[$key] !== '') {
             return $raw[$key];
         }
+
+        // PRIORITÉ 2 : colonne réelle (objet)
+        if (is_object($model)
+            && isset($model->{$key})
+            && $model->{$key} !== null
+            && $model->{$key} !== '') {
+            return $model->{$key};
+        }
+
+        // PRIORITÉ 3 : colonne réelle (tableau)
+        if (is_array($model)
+            && array_key_exists($key, $model)
+            && $model[$key] !== null
+            && $model[$key] !== '') {
+            return $model[$key];
+        }
     }
+
     return $default;
 }
-
 /**
  * Détecte les valeurs "placeholder" du CSV RNIC qui signifient en
  * réalité une absence de donnée (ex: "non connu", "inconnu", "-").

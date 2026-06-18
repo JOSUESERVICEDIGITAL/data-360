@@ -16,7 +16,7 @@ const importId    = {{ $import->id }};
 const progressUrl = "{{ route('front.csv.progress', $import->id) }}";
 
 let errorCount = 0;
-const maxErrorRetries = 100;
+const maxErrorRetries = 1000;
 
 function poll() {
     fetch(progressUrl)
@@ -34,7 +34,7 @@ function poll() {
                 document.getElementById('downloadBtn').style.display = 'block';
             } else if (data.statut === 'erreur') {
                 errorCount++;
-                document.getElementById('statusText').textContent = '⚠️ Si le traitement échoue, actualisez la page… (tentative ' + errorCount + ')';
+                document.getElementById('statusText').textContent = '';
                 if (errorCount < maxErrorRetries) {
                     setTimeout(poll, 5000);
                 } else {
