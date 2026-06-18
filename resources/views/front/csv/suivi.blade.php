@@ -12,8 +12,11 @@
 </div>
 
 <script>
-const importId   = {{ $import->id }};
+const importId    = {{ $import->id }};
 const progressUrl = "{{ route('front.csv.progress', $import->id) }}";
+
+let errorCount = 0;
+const maxErrorRetries = 5;
 
 function poll() {
     fetch(progressUrl)
@@ -30,9 +33,16 @@ function poll() {
                     </a>`;
                 document.getElementById('downloadBtn').style.display = 'block';
             } else if (data.statut === 'erreur') {
-                document.getElementById('statusText').textContent = '❌ Erreur lors du traitement.';
+                errorCount++;
+                document.getElementById('statusText').textContent = '⚠️ Reprise après interruption… (tentative ' + errorCount + ')';
+                if (errorCount < maxErrorRetries) {
+                    setTimeout(poll, 5000);
+                } else {
+                    document.getElementById('statusText').textContent = '❌ Erreur lors du traitement.';
+                }
             } else {
-                setTimeout(poll, 3000); // re-poll toutes les 3 secondes
+                errorCount = 0;
+                setTimeout(poll, 3000);
             }
         });
 }
