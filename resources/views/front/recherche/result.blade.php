@@ -13,22 +13,66 @@
  */
 function dr_value($model, array $keys, $default = '-')
 {
-    foreach ($keys as $key) {
-        $raw = is_object($model) ? ($model->raw_data ?? []) : ($model['raw_data'] ?? []);
-        if (is_string($raw)) {
-            $raw = json_decode($raw, true) ?: [];
+    $raw = is_object($model)
+        ? ($model->raw_data ?? [])
+        : ($model['raw_data'] ?? []);
+
+    if (is_string($raw)) {
+        $raw = json_decode($raw, true) ?: [];
+    }
+
+    $rawNested = [];
+    if (is_array($raw) && isset($raw['raw_data'])) {
+        $rawNested = $raw['raw_data'];
+
+        if (is_string($rawNested)) {
+            $rawNested = json_decode($rawNested, true) ?: [];
         }
-        if (is_array($raw) && isset($raw[$key]) && $raw[$key] !== null && $raw[$key] !== '') {
+    }
+
+    foreach ($keys as $key) {
+
+        // PRIORITÉ 1 : raw_data imbriqué (RNIC réel)
+        if (
+            is_array($rawNested)
+            && array_key_exists($key, $rawNested)
+            && $rawNested[$key] !== null
+            && $rawNested[$key] !== ''
+        ) {
+            return $rawNested[$key];
+        }
+
+        // PRIORITÉ 2 : raw_data niveau 1
+        if (
+            is_array($raw)
+            && array_key_exists($key, $raw)
+            && $raw[$key] !== null
+            && $raw[$key] !== ''
+        ) {
             return $raw[$key];
         }
 
-        if (is_object($model) && isset($model->{$key}) && $model->{$key} !== null && $model->{$key} !== '') {
+        // PRIORITÉ 3 : colonne Eloquent
+        if (
+            is_object($model)
+            && isset($model->{$key})
+            && $model->{$key} !== null
+            && $model->{$key} !== ''
+        ) {
             return $model->{$key};
         }
-        if (is_array($model) && isset($model[$key]) && $model[$key] !== null && $model[$key] !== '') {
+
+        // PRIORITÉ 4 : tableau
+        if (
+            is_array($model)
+            && array_key_exists($key, $model)
+            && $model[$key] !== null
+            && $model[$key] !== ''
+        ) {
             return $model[$key];
         }
     }
+
     return $default;
 }
 
@@ -617,7 +661,7 @@ $rnbAddressesCount = $rnbAddresses->count();
                             <div class="dr-field-label">Adresse RNIC <i class="fa-regular fa-copy"></i></div>
                             <div class="dr-field-value">
                                 {{ dr_value($coproPrincipale, ['adresse_complete', 'adresse_reference']) }}<br>
-                                {{ dr_value($coproPrincipale, ['code_postal', 'code_postal_adresse']) }} {{ dr_value($coproPrincipale, ['ville', 'commune_adresse', 'nom_officiel_commune']) }}
+                                {{ dr_value($coproPrincipale, ['code_postal_adresse', 'code_postal']) }} {{ dr_value($coproPrincipale, ['commune_adresse', 'nom_officiel_commune', 'ville']) }}
                             </div>
                         </div>
                         <div class="dr-field copyable" data-copy="{{ $representantNom ?: '' }}">
@@ -965,7 +1009,7 @@ $rnbAddressesCount = $rnbAddresses->count();
                         <div class="dr-grid">
                             <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['adresse_complete', 'adresse_reference']) }}">
                                 <div class="dr-field-label">Adresse RNIC <i class="fa-regular fa-copy"></i></div>
-                                <div class="dr-field-value">{{ dr_value($copro, ['adresse_complete', 'adresse_reference']) }}<br>{{ dr_value($copro, ['code_postal', 'code_postal_adresse']) }} {{ dr_value($copro, ['ville', 'commune_adresse']) }}</div>
+                                <div class="dr-field-value">{{ dr_value($copro, ['adresse_complete', 'adresse_reference']) }}<br>{{ dr_value($copro, ['code_postal_adresse', 'code_postal']) }} {{ dr_value($copro, ['commune_adresse', 'nom_officiel_commune', 'ville']) }}</div>
                             </div>
                             <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['numero_immatriculation']) }}">
                                 <div class="dr-field-label">Immatriculation <i class="fa-regular fa-copy"></i></div>
