@@ -8,6 +8,31 @@ use Illuminate\Support\Str;
 
 class CoproprieteApiService
 {
+    /**
+     * Valeurs considérées comme "vides" / placeholder dans le CSV RNIC.
+     * Le CSV utilise parfois des libellés textuels au lieu de NULL pour
+     * indiquer l'absence de donnée — il faut les traiter comme vides,
+     * sinon ils sont interprétés à tort comme un vrai nom de représentant
+     * ou un vrai identifiant.
+     */
+    private const PLACEHOLDER_VALUES = [
+        'non connu',
+        'non connue',
+        'non renseigne',
+        'non renseignee',
+        'non communique',
+        'non communiquee',
+        'non disponible',
+        'inconnu',
+        'inconnue',
+        'n a',
+        'na',
+        'nc',
+        '-',
+        '--',
+        '',
+    ];
+
     public function __construct(
         protected ApiLoggerService   $logger,
         protected CoproprieteService $coproprieteService  // ← nouveau
@@ -31,8 +56,9 @@ class CoproprieteApiService
 
         return $results;
     }
+
     // ═══════════════════════════════════════════════════════════════
-    // RECHERCHE LOCALE — ancienne logique extraite telle quelle
+    // RECHERCHE LOCALE — inchangée
     // ═══════════════════════════════════════════════════════════════
     private function searchLocal(string $adresse, ?string $codePostal, ?string $ville): array
     {
@@ -72,13 +98,13 @@ class CoproprieteApiService
 
             $sameImmatriculation = $copro->numero_immatriculation
                 ? RnicCopropriete::where('numero_immatriculation', $copro->numero_immatriculation)
-                ->get(['adresse_complete', 'code_postal', 'ville', 'raw_data'])
+                    ->get(['adresse_complete', 'code_postal', 'ville', 'raw_data'])
                 : collect();
 
             $arr = $copro->toArray();
-            $arr['score_match']            = $candidate['score'];
-            $arr['adresse_rnic_match']     = $candidate['matched_address'];
-            $arr['adresse_match_exact']    = $candidate['is_exact_address'];
+            $arr['score_match']              = $candidate['score'];
+            $arr['adresse_rnic_match']       = $candidate['matched_address'];
+            $arr['adresse_match_exact']      = $candidate['is_exact_address'];
             $arr['adresses_associees_liste'] = $this->buildAssociatedAddresses($sameImmatriculation, $copro);
 
             if (empty($arr['nombre_adresses_associees'])) {
@@ -104,7 +130,7 @@ class CoproprieteApiService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // FALLBACK API RNIC PUBLIQUE
+    // FALLBACK API RNIC PUBLIQUE — inchangé
     // ═══════════════════════════════════════════════════════════════
     private function searchRnicApi(string $adresse, ?string $codePostal, ?string $ville): array
     {
@@ -199,7 +225,7 @@ class CoproprieteApiService
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // NORMALIZE — inchangé
+    // NORMALIZE — FIX PRINCIPAL : filtre anti-placeholder
     // ═══════════════════════════════════════════════════════════════
     public function normalize(array $item): array
     {
@@ -210,16 +236,27 @@ class CoproprieteApiService
                 ?? null
         );
 
-        $sirenSyndic = $item['siren_syndic'] ?? null;
-        $siretSyndic = $item['siret_syndic'] ?? null;
+        $sirenSyndic = $this->cleanIdentifier($item['siren_syndic'] ?? null);
+        $siretSyndic = $this->cleanIdentifier($item['siret_syndic'] ?? null);
 
         $isSharedHiddenIdentity = $this->isHiddenOpenDataIdentity($representantNom);
+        $isPlaceholderNom       = $this->isPlaceholderValue($representantNom);
 
+        // Un nom "non connu", "inconnu", etc. ne compte PAS comme un
+        // représentant connu — c'est l'absence de donnée déguisée en texte
+        // par certaines versions du CSV RNIC.
         $representantConnu = (
-            (!empty($representantNom) && !$isSharedHiddenIdentity)
+            (!empty($representantNom) && !$isSharedHiddenIdentity && !$isPlaceholderNom)
             || !empty($sirenSyndic)
             || !empty($siretSyndic)
         );
+
+        // Si le nom est un placeholder, on le neutralise complètement
+        // pour ne jamais l'afficher tel quel dans l'UI (ex: "non connu"
+        // affiché comme si c'était un vrai nom de syndic).
+        $representantNomFinal = ($representantConnu && !$isPlaceholderNom)
+            ? $representantNom
+            : null;
 
         return [
             'numero_immatriculation'    => $item['numero_immatriculation'] ?? null,
@@ -234,8 +271,8 @@ class CoproprieteApiService
             'representant_legal_connu'  => $representantConnu,
             'representant_legal_type'   => $representantConnu ? ($item['representant_legal_type'] ?? 'syndic') : null,
             'message_representant'      => $representantConnu ? null : 'Pas de représentant légal connu',
-            'representant_legal_nom'    => $representantConnu ? $representantNom : null,
-            'syndic_nom'                => $representantConnu ? ($item['syndic_nom'] ?? $representantNom) : null,
+            'representant_legal_nom'    => $representantNomFinal,
+            'syndic_nom'                => $representantConnu ? ($item['syndic_nom'] ?? $representantNomFinal) : null,
             'siren_syndic'              => $representantConnu ? $sirenSyndic : null,
             'siret_syndic'              => $representantConnu ? $siretSyndic : null,
             'score_match'               => $item['score_match'] ?? null,
@@ -248,14 +285,55 @@ class CoproprieteApiService
         ];
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // DÉTECTION DE VALEUR PLACEHOLDER (FIX PRINCIPAL)
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * Détecte si une valeur texte est en réalité un "vide déguisé"
+     * (ex: "non connu", "inconnu", "-", etc.) plutôt qu'une vraie donnée.
+     * Normalise accents/casse/ponctuation avant comparaison.
+     */
+    private function isPlaceholderValue(?string $value): bool
+    {
+        if ($value === null) {
+            return true;
+        }
+
+        $normalized = Str::ascii(mb_strtolower(trim($value)));
+        $normalized = preg_replace('/[^a-z0-9]+/', ' ', $normalized);
+        $normalized = trim($normalized);
+
+        if ($normalized === '') {
+            return true;
+        }
+
+        return in_array($normalized, self::PLACEHOLDER_VALUES, true);
+    }
+
+    /**
+     * Nettoie un identifiant (SIREN/SIRET) : enlève les valeurs
+     * placeholder et ne garde que les chiffres si la valeur est valide.
+     */
+    private function cleanIdentifier(?string $value): ?string
+    {
+        if ($this->isPlaceholderValue($value)) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D/', '', $value);
+
+        return $digits !== '' ? $digits : null;
+    }
+
     // ═══════════════════════════════════════════════════════════════
-    // TOUTES LES MÉTHODES PRIVÉES — inchangées
+    // MÉTHODES PRIVÉES — matching d'adresse
     // ═══════════════════════════════════════════════════════════════
 
     private function extractStreetType(?string $text): ?string
     {
         $text = Str::ascii(mb_strtolower($text ?? ''));
-        $map = [
+        $map  = [
             'rue'       => ['rue', 'r'],
             'avenue'    => ['avenue', 'av', 'avenu'],
             'boulevard' => ['boulevard', 'bd', 'boul'],
@@ -281,7 +359,7 @@ class CoproprieteApiService
     private function bestAddressMatchForCopro(RnicCopropriete $copro, string $originalSearched, string $searched, ?string $searchedNumber, ?string $searchedPostal, array $searchedWords): array
     {
         $addresses = $this->candidateAddressesForCopro($copro);
-        $best = ['score' => 0, 'matched_address' => null, 'is_exact_address' => false];
+        $best      = ['score' => 0, 'matched_address' => null, 'is_exact_address' => false];
 
         foreach ($addresses as $candidateAddress) {
             $candidate       = $this->normalizeText($candidateAddress);
@@ -323,6 +401,11 @@ class CoproprieteApiService
         return array_values(array_filter($words, fn($w) => strlen($w) >= 4 && !is_numeric($w) && !in_array($w, $stopWords, true) && !preg_match('/^\d{5}$/', $w)));
     }
 
+    /**
+     * FIX : on filtre maintenant les adresses placeholder (ex: "non connu"
+     * dans adresse_complementaire_3) qui ne devraient pas être utilisées
+     * comme candidates pour le matching d'adresse.
+     */
     private function candidateAddressesForCopro(RnicCopropriete $copro): array
     {
         $raw = $copro->raw_data ?? [];
@@ -331,28 +414,42 @@ class CoproprieteApiService
         $addresses = [
             $copro->adresse_complete,
             $raw['adresse_reference']          ?? null,
+            $raw['adresse_de_reference']       ?? null, // nouveau nom CSV
             $raw['numero_voie_adresse']        ?? null,
             $raw['adresse_complementaire_1']   ?? null,
             $raw['adresse_complementaire_2']   ?? null,
             $raw['adresse_complementaire_3']   ?? null,
         ];
 
-        return collect($addresses)->filter()->map(function ($address) use ($copro) {
-            $address = trim((string) $address);
-            if (!preg_match('/\b\d{5}\b/', $address) && $copro->code_postal) $address .= ' ' . $copro->code_postal;
-            if ($copro->ville && !str_contains(Str::ascii(mb_strtolower($address)), Str::ascii(mb_strtolower($copro->ville)))) $address .= ' ' . $copro->ville;
-            return $address;
-        })->unique()->values()->toArray();
+        return collect($addresses)
+            ->filter(fn($a) => $a && !$this->isPlaceholderValue($a))
+            ->map(function ($address) use ($copro) {
+                $address = trim((string) $address);
+                if (!preg_match('/\b\d{5}\b/', $address) && $copro->code_postal) {
+                    $address .= ' ' . $copro->code_postal;
+                }
+                if ($copro->ville && !str_contains(Str::ascii(mb_strtolower($address)), Str::ascii(mb_strtolower($copro->ville)))) {
+                    $address .= ' ' . $copro->ville;
+                }
+                return $address;
+            })
+            ->unique()
+            ->values()
+            ->toArray();
     }
 
     private function buildAssociatedAddresses($sameImmatriculation, RnicCopropriete $copro): array
     {
         $items = collect();
         foreach ($sameImmatriculation as $row) {
-            foreach ($this->candidateAddressesForCopro($row) as $address) $items->push($address);
+            foreach ($this->candidateAddressesForCopro($row) as $address) {
+                $items->push($address);
+            }
         }
         if ($items->isEmpty()) {
-            foreach ($this->candidateAddressesForCopro($copro) as $address) $items->push($address);
+            foreach ($this->candidateAddressesForCopro($copro) as $address) {
+                $items->push($address);
+            }
         }
         return $items->filter()->unique()->values()->toArray();
     }
@@ -407,13 +504,24 @@ class CoproprieteApiService
         return min($score, 100);
     }
 
+    /**
+     * FIX : nettoie un nom de représentant en enlevant SIREN/SIRET
+     * embarqués, ET neutralise les valeurs placeholder (ex: "non connu")
+     * qui ne sont pas de vrais noms de syndic.
+     */
     private function cleanRepresentativeName(?string $name): ?string
     {
-        if (!$name) return null;
+        if ($this->isPlaceholderValue($name)) {
+            return null;
+        }
+
         $name = preg_replace('/\b\d{14}\b/', '', $name);
         $name = preg_replace('/\b\d{9}\b/', '', $name);
         $name = trim(preg_replace('/\s+/', ' ', $name));
-        return $name ?: null;
+
+        // Après nettoyage des chiffres, vérifier à nouveau si le
+        // résultat n'est pas devenu vide ou un placeholder.
+        return $this->isPlaceholderValue($name) ? null : ($name ?: null);
     }
 
     private function isHiddenOpenDataIdentity(?string $name): bool
