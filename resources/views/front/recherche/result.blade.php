@@ -5,50 +5,36 @@
 @section('content')
 
 @php
+/**
+ * dr_value() — NOUVELLE PRIORITÉ
+ * 1. D'ABORD raw_data (donnée brute du CSV RNIC, source de vérité)
+ * 2. EN FALLBACK colonne réelle Eloquent/array, seulement si raw_data
+ *    est absent ou vide pour cette clé
+ */
 function dr_value($model, array $keys, $default = '-')
 {
-    $raw = is_object($model)
-        ? ($model->raw_data ?? [])
-        : ($model['raw_data'] ?? []);
-
-    if (is_string($raw)) {
-        $raw = json_decode($raw, true) ?: [];
-    }
-
     foreach ($keys as $key) {
-
-        // PRIORITÉ 1 : raw_data
-        if (is_array($raw)
-            && array_key_exists($key, $raw)
-            && $raw[$key] !== null
-            && $raw[$key] !== '') {
+        $raw = is_object($model) ? ($model->raw_data ?? []) : ($model['raw_data'] ?? []);
+        if (is_string($raw)) {
+            $raw = json_decode($raw, true) ?: [];
+        }
+        if (is_array($raw) && isset($raw[$key]) && $raw[$key] !== null && $raw[$key] !== '') {
             return $raw[$key];
         }
 
-        // PRIORITÉ 2 : colonne réelle (objet)
-        if (is_object($model)
-            && isset($model->{$key})
-            && $model->{$key} !== null
-            && $model->{$key} !== '') {
+        if (is_object($model) && isset($model->{$key}) && $model->{$key} !== null && $model->{$key} !== '') {
             return $model->{$key};
         }
-
-        // PRIORITÉ 3 : colonne réelle (tableau)
-        if (is_array($model)
-            && array_key_exists($key, $model)
-            && $model[$key] !== null
-            && $model[$key] !== '') {
+        if (is_array($model) && isset($model[$key]) && $model[$key] !== null && $model[$key] !== '') {
             return $model[$key];
         }
     }
-
     return $default;
 }
+
 /**
  * Détecte les valeurs "placeholder" du CSV RNIC qui signifient en
  * réalité une absence de donnée (ex: "non connu", "inconnu", "-").
- * Sans ce filtre, dr_value() remonte ces chaînes comme si elles
- * étaient un vrai nom de représentant, faussant le badge affiché.
  */
 function dr_is_placeholder($value): bool
 {
@@ -69,8 +55,7 @@ function dr_is_placeholder($value): bool
 }
 
 /**
- * Comme dr_value() mais ignore les valeurs placeholder — à utiliser
- * partout où on cherche un VRAI nom de représentant / identifiant.
+ * Comme dr_value() mais ignore les valeurs placeholder.
  */
 function dr_value_real($model, array $keys, $default = null)
 {
@@ -80,15 +65,30 @@ function dr_value_real($model, array $keys, $default = null)
 
 $copros = collect($resultat['coproprietes'] ?? []);
 
+// ════════════════════════════════════════════════════════════
+// CLÉS RÉELLES DU CSV RNIC (vérifiées sur raw_data) :
+//   - representant_legal_nom    → raison_sociale_representant_legal
+//   - identification_representant_legal (existe aussi tel quel)
+//   - siren_syndic              → siren_representant_legal
+//   - siret_syndic              → siret_representant_legal
+//   - representant_legal_type   → type_syndic
+//   - nom_copropriete           → nom_usage_copropriete
+//   - code_postal               → code_postal_adresse
+//   - ville                     → commune_adresse / nom_officiel_commune
+// Les anciennes clés (representant_legal_nom, syndic_nom, siren_syndic,
+// siret_syndic) sont conservées en fallback dans les listes au cas où
+// une colonne réelle Eloquent les utilise encore.
+// ════════════════════════════════════════════════════════════
+
 $coprosAvecRep = $copros->filter(function ($copro) {
     $hasRepNom = !empty(dr_value_real($copro, [
-        'representant_legal_nom',
-        'syndic_nom',
         'raison_sociale_representant_legal',
         'identification_representant_legal',
+        'representant_legal_nom',
+        'syndic_nom',
     ]));
-    $hasSiren = !empty(dr_value_real($copro, ['siren_syndic']));
-    $hasSiret = !empty(dr_value_real($copro, ['siret_syndic', 'siret_representant_legal']));
+    $hasSiren = !empty(dr_value_real($copro, ['siren_representant_legal', 'siren_syndic']));
+    $hasSiret = !empty(dr_value_real($copro, ['siret_representant_legal', 'siret_syndic']));
     return $hasRepNom || $hasSiren || $hasSiret;
 });
 
@@ -110,23 +110,23 @@ $hasMultipleImmat   = $nbImmatriculations > 1;
 $adresseEnregistree = !empty($coproPrincipale);
 $representantNom    = $coproPrincipale
     ? dr_value_real($coproPrincipale, [
-        'representant_legal_nom',
-        'syndic_nom',
         'raison_sociale_representant_legal',
         'identification_representant_legal',
+        'representant_legal_nom',
+        'syndic_nom',
       ])
     : null;
-$sirenSyndic = $coproPrincipale ? dr_value_real($coproPrincipale, ['siren_syndic']) : null;
-$siretSyndic = $coproPrincipale ? dr_value_real($coproPrincipale, ['siret_syndic', 'siret_representant_legal']) : null;
+$sirenSyndic = $coproPrincipale ? dr_value_real($coproPrincipale, ['siren_representant_legal', 'siren_syndic']) : null;
+$siretSyndic = $coproPrincipale ? dr_value_real($coproPrincipale, ['siret_representant_legal', 'siret_syndic']) : null;
 $representantConnu = $adresseEnregistree && (!empty($representantNom) || !empty($sirenSyndic) || !empty($siretSyndic));
 
 if (!$representantConnu && $copros->isNotEmpty()) {
-    $anyRepNom = $copros->filter(fn($c) => !empty(dr_value_real($c, ['representant_legal_nom','syndic_nom'])))->first();
-    $anySiren  = $copros->filter(fn($c) => !empty(dr_value_real($c, ['siren_syndic'])))->first();
+    $anyRepNom = $copros->filter(fn($c) => !empty(dr_value_real($c, ['raison_sociale_representant_legal', 'identification_representant_legal', 'representant_legal_nom', 'syndic_nom'])))->first();
+    $anySiren  = $copros->filter(fn($c) => !empty(dr_value_real($c, ['siren_representant_legal', 'siren_syndic'])))->first();
     if ($anyRepNom || $anySiren) {
         $representantConnu = true;
-        if (!$representantNom && $anyRepNom) $representantNom = dr_value_real($anyRepNom, ['representant_legal_nom','syndic_nom']);
-        if (!$sirenSyndic   && $anySiren)   $sirenSyndic     = dr_value_real($anySiren, ['siren_syndic']);
+        if (!$representantNom && $anyRepNom) $representantNom = dr_value_real($anyRepNom, ['raison_sociale_representant_legal', 'identification_representant_legal', 'representant_legal_nom', 'syndic_nom']);
+        if (!$sirenSyndic   && $anySiren)   $sirenSyndic     = dr_value_real($anySiren, ['siren_representant_legal', 'siren_syndic']);
     }
 }
 
@@ -137,41 +137,37 @@ $coproRawModel = is_array($coproPrincipale)
 if (is_string($coproRawModel)) $coproRawModel = json_decode($coproRawModel, true) ?: [];
 $coproRawModel = is_array($coproRawModel) ? $coproRawModel : [];
 
-$mandatEnCours = null;
-$dateFinMandat = null;
+$mandatEnCours = $coproRawModel['mandat_en_cours'] ?? null;
 
-$statutColonne = is_array($coproPrincipale)
-    ? ($coproPrincipale['statut'] ?? null)
-    : (is_object($coproPrincipale) ? ($coproPrincipale->statut ?? null) : null);
-if ($statutColonne) $mandatEnCours = $statutColonne;
-
-if (!$mandatEnCours && !empty($coproRawModel['mandat_en_cours'])) {
-    $mandatEnCours = $coproRawModel['mandat_en_cours'];
+if (!$mandatEnCours) {
+    $statutColonne = is_array($coproPrincipale)
+        ? ($coproPrincipale['statut'] ?? null)
+        : (is_object($coproPrincipale) ? ($coproPrincipale->statut ?? null) : null);
+    if ($statutColonne) $mandatEnCours = $statutColonne;
 }
 
-$coproRawNested = $coproRawModel['raw_data'] ?? [];
-if (is_string($coproRawNested)) $coproRawNested = json_decode($coproRawNested, true) ?: [];
+$dateFinMandat = $coproRawModel['date_fin_dernier_mandat'] ?? null;
 
-if (!$mandatEnCours && !empty($coproRawNested['mandat_en_cours'])) {
-    $mandatEnCours = $coproRawNested['mandat_en_cours'];
-}
+$mandatLower = \Illuminate\Support\Str::ascii(mb_strtolower($mandatEnCours ?? ''));
 
-$dateFinMandat = $coproRawModel['date_fin_dernier_mandat']
-    ?? $coproRawNested['date_fin_dernier_mandat']
-    ?? null;
-
-$mandatLower  = \Illuminate\Support\Str::ascii(mb_strtolower($mandatEnCours ?? ''));
-$mandatExpire = str_contains($mandatLower, 'expir') || str_contains($mandatLower, 'sans successeur');
+// "Mandat expiré" couvre maintenant 3 libellés possibles du CSV RNIC :
+//   - contient "expir"
+//   - contient "sans successeur"
+//   - exactement "pas de mandat en cours" AVEC une date_fin_dernier_mandat renseignée
+//     (= il y a EU un syndic, son mandat a pris fin, pas de successeur déclaré —
+//      différent de "jamais eu de syndic")
+$mandatExpire = str_contains($mandatLower, 'expir')
+    || str_contains($mandatLower, 'sans successeur')
+    || (trim($mandatLower) === 'pas de mandat en cours' && !empty($dateFinMandat));
 
 if ($mandatExpire && empty($representantNom)) {
-    $raisonSociale = $coproRawNested['raison_sociale_representant_legal']
-        ?? $coproRawModel['raison_sociale_representant_legal']
-        ?? null;
+    $raisonSociale = $coproRawModel['raison_sociale_representant_legal'] ?? null;
     if ($raisonSociale) $representantNom = $raisonSociale;
     if (!$siretSyndic) {
-        $siretSyndic = $coproRawNested['siret_representant_legal']
-            ?? $coproRawModel['siret_representant_legal']
-            ?? null;
+        $siretSyndic = $coproRawModel['siret_representant_legal'] ?? null;
+    }
+    if (!$sirenSyndic) {
+        $sirenSyndic = $coproRawModel['siren_representant_legal'] ?? null;
     }
 }
 
@@ -347,7 +343,6 @@ $rnbAddressesCount = $rnbAddresses->count();
 <section class="dr-page">
     <div class="dr-container">
 
-        {{-- ══ HERO ══════════════════════════════════════════════ --}}
         <div class="dr-hero">
             <div>
                 <div class="dr-hero-kicker"><i class="fa-solid fa-chart-line"></i> Rapport d'analyse avancée</div>
@@ -365,7 +360,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══ ONGLETS ═════════════════════════════════════════════ --}}
         <div class="dr-tabs">
             <button class="dr-tab-btn active" data-tab="eligibilite"><i class="fa-solid fa-shield-halved"></i> Éligibilité</button>
             <button class="dr-tab-btn" data-tab="representant"><i class="fa-solid fa-user-tie"></i> Représentant</button>
@@ -378,7 +372,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             <button class="dr-tab-btn" data-tab="syndics"><i class="fa-solid fa-landmark"></i> Syndics</button>
         </div>
 
-        {{-- ══ STATS GLOBALES ══════════════════════════════════════ --}}
         <div class="dr-stats">
             <div class="dr-stat-card" data-tab="eligibilite">
                 <div class="dr-stat-icon"><i class="fa-solid fa-shield-halved"></i></div>
@@ -429,9 +422,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         @else
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 1 — ÉLIGIBILITÉ QPV / ZFU
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel active" id="panel-eligibilite">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -527,12 +517,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 2 — REPRÉSENTANT LÉGAL
-             → Rouge si pas de représentant (comportement original)
-             → Orange si mandat expiré (nouveau comportement)
-             → Vert si représentant actif
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel" id="panel-representant">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -544,7 +528,6 @@ $rnbAddressesCount = $rnbAddresses->count();
                 </div>
                 <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
 
-                    {{-- Badge statut : vert / orange / rouge --}}
                     @if ($representantConnu && !$mandatExpire)
                         <div class="dr-status success">
                             <i class="fa-solid fa-circle-check"></i>
@@ -562,7 +545,6 @@ $rnbAddressesCount = $rnbAddresses->count();
                         </div>
                     @endif
 
-                    {{-- Badge multi-immatriculation --}}
                     @if ($hasMultipleImmat)
                         <div class="badge-multi-immat">
                             <i class="fa-solid fa-triangle-exclamation"></i>
@@ -581,7 +563,6 @@ $rnbAddressesCount = $rnbAddresses->count();
                     <div class="dr-empty">Adresse non enregistrée dans le RNIC pour cette recherche.</div>
                 @else
 
-                    {{-- ══ BANNIÈRE MANDAT EXPIRÉ (orange) ══════════════ --}}
                     @if ($mandatExpire)
                         <div class="mandat-expire-banner">
                             <div class="icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
@@ -609,7 +590,6 @@ $rnbAddressesCount = $rnbAddresses->count();
                         </div>
                     @endif
 
-                    {{-- ══ ALERTE MULTI-IMMATRICULATION ══════════════════ --}}
                     @if ($hasMultipleImmat)
                         <div style="background:#fff7ed; border:1.5px solid #f59e0b; border-radius:16px; padding:14px 18px; margin-bottom:20px; display:flex; align-items:flex-start; gap:12px;">
                             <i class="fa-solid fa-triangle-exclamation" style="color:#b45309; margin-top:2px; flex-shrink:0;"></i>
@@ -628,17 +608,16 @@ $rnbAddressesCount = $rnbAddresses->count();
                         </div>
                     @endif
 
-                    {{-- ══ GRILLE DES CHAMPS ══════════════════════════════ --}}
                     <div class="dr-grid">
                         <div class="dr-field copyable" data-copy="{{ $adresse->adresse_complete ?? $q ?? '-' }}">
                             <div class="dr-field-label">Adresse contrôlée <i class="fa-regular fa-copy"></i></div>
                             <div class="dr-field-value">{{ $adresse->adresse_complete ?? $q ?? '-' }}</div>
                         </div>
-                        <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale, ['adresse_complete']) }}">
+                        <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale, ['adresse_complete', 'adresse_reference']) }}">
                             <div class="dr-field-label">Adresse RNIC <i class="fa-regular fa-copy"></i></div>
                             <div class="dr-field-value">
-                                {{ dr_value($coproPrincipale, ['adresse_complete']) }}<br>
-                                {{ dr_value($coproPrincipale, ['code_postal']) }} {{ dr_value($coproPrincipale, ['ville']) }}
+                                {{ dr_value($coproPrincipale, ['adresse_complete', 'adresse_reference']) }}<br>
+                                {{ dr_value($coproPrincipale, ['code_postal', 'code_postal_adresse']) }} {{ dr_value($coproPrincipale, ['ville', 'commune_adresse', 'nom_officiel_commune']) }}
                             </div>
                         </div>
                         <div class="dr-field copyable" data-copy="{{ $representantNom ?: '' }}">
@@ -652,9 +631,9 @@ $rnbAddressesCount = $rnbAddresses->count();
                                 @endif
                             </div>
                         </div>
-                        <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale, ['representant_legal_type','type_syndic']) }}">
+                        <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale, ['type_syndic', 'representant_legal_type']) }}">
                             <div class="dr-field-label">Type représentant <i class="fa-regular fa-copy"></i></div>
-                            <div class="dr-field-value">{{ dr_value($coproPrincipale, ['representant_legal_type','type_syndic']) }}</div>
+                            <div class="dr-field-value">{{ dr_value($coproPrincipale, ['type_syndic', 'representant_legal_type']) }}</div>
                         </div>
                         <div class="dr-field copyable" data-copy="{{ $sirenSyndic ?: '' }}">
                             <div class="dr-field-label">SIREN syndic <i class="fa-regular fa-copy"></i></div>
@@ -668,9 +647,9 @@ $rnbAddressesCount = $rnbAddresses->count();
                             <div class="dr-field-label">Immatriculation <i class="fa-regular fa-copy"></i></div>
                             <div class="dr-field-value"><code>{{ dr_value($coproPrincipale, ['numero_immatriculation']) }}</code></div>
                         </div>
-                        <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale, ['nom_copropriete','nom_usage_copropriete']) }}">
+                        <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale, ['nom_usage_copropriete', 'nom_copropriete']) }}">
                             <div class="dr-field-label">Nom résidence <i class="fa-regular fa-copy"></i></div>
-                            <div class="dr-field-value">{{ dr_value($coproPrincipale, ['nom_copropriete','nom_usage_copropriete']) }}</div>
+                            <div class="dr-field-value">{{ dr_value($coproPrincipale, ['nom_usage_copropriete', 'nom_copropriete']) }}</div>
                         </div>
                         <div class="dr-field">
                             <div class="dr-field-label">Lots habitation</div>
@@ -682,7 +661,6 @@ $rnbAddressesCount = $rnbAddresses->count();
                         </div>
                     </div>
 
-                    {{-- ── Liste multi-immatriculations ── --}}
                     @if ($hasMultipleImmat)
                         <h3 style="margin:24px 0 12px; font-size:.95rem; font-weight:800; color:var(--dr-primary);">
                             <i class="fa-solid fa-list-check" style="color:var(--dr-blue);"></i>
@@ -690,8 +668,8 @@ $rnbAddressesCount = $rnbAddresses->count();
                         </h3>
                         @foreach ($coprosImmatriculees as $idx => $c)
                             @php
-                                $cRepNom = dr_value_real($c, ['representant_legal_nom','syndic_nom']);
-                                $cSiren  = dr_value_real($c, ['siren_syndic']);
+                                $cRepNom = dr_value_real($c, ['raison_sociale_representant_legal', 'identification_representant_legal', 'representant_legal_nom', 'syndic_nom']);
+                                $cSiren  = dr_value_real($c, ['siren_representant_legal', 'siren_syndic']);
                                 $cHasRep = !empty($cRepNom) || !empty($cSiren);
                             @endphp
                             <div style="display:flex; align-items:center; gap:14px; background:{{ $cHasRep ? 'var(--dr-success-bg)' : 'var(--dr-soft)' }}; border:1px solid {{ $cHasRep ? '#86efac' : 'var(--dr-border)' }}; border-radius:14px; padding:12px 16px; margin-bottom:8px;">
@@ -700,7 +678,7 @@ $rnbAddressesCount = $rnbAddresses->count();
                                 </div>
                                 <div style="flex:1; min-width:0;">
                                     <div style="font-weight:800; font-size:.85rem; color:var(--dr-primary);">
-                                        {{ dr_value($c, ['nom_copropriete','nom_usage_copropriete'], 'Copropriété ' . ($idx+1)) }}
+                                        {{ dr_value($c, ['nom_usage_copropriete', 'nom_copropriete'], 'Copropriété ' . ($idx+1)) }}
                                     </div>
                                     <div style="font-size:.75rem; color:var(--dr-muted); margin-top:2px;">
                                         N° {{ dr_value($c, ['numero_immatriculation'], '-') }}
@@ -720,9 +698,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 3 — ADRESSE NORMALISÉE
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel" id="panel-adresse">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -752,9 +727,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 4 — RNB
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel" id="panel-rnb">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -824,9 +796,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 5 — CADASTRE
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel" id="panel-cadastre">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -866,9 +835,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 6 — BÂTIMENTS BDNB
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel" id="panel-batiments">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -911,9 +877,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 7 — PROPRIÉTAIRES BDNB
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel" id="panel-proprietaires">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -964,9 +927,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 8 — COPROPRIÉTÉS RNIC
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel" id="panel-coproprietes">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -980,35 +940,32 @@ $rnbAddressesCount = $rnbAddresses->count();
             <div class="dr-panel-body">
                 @forelse (($resultat['coproprietes'] ?? []) as $copro)
                     @php
-                        $coproRepNom   = dr_value_real($copro, ['representant_legal_nom','syndic_nom']);
+                        $coproRepNom   = dr_value_real($copro, ['raison_sociale_representant_legal', 'identification_representant_legal', 'representant_legal_nom', 'syndic_nom']);
                         $coproRepConnu = !empty($coproRepNom)
-                            || !empty(dr_value_real($copro, ['siren_syndic']))
-                            || !empty(dr_value_real($copro, ['siret_syndic']));
+                            || !empty(dr_value_real($copro, ['siren_representant_legal', 'siren_syndic']))
+                            || !empty(dr_value_real($copro, ['siret_representant_legal', 'siret_syndic']));
                         $coproRawData  = $copro['raw_data'] ?? ($copro->raw_data ?? null);
                         if (is_string($coproRawData)) $coproRawData = json_decode($coproRawData, true) ?: [];
-                        // Chercher dans nested raw_data aussi
-                        $coproRawNested2 = is_array($coproRawData) ? ($coproRawData['raw_data'] ?? []) : [];
-                        if (is_string($coproRawNested2)) $coproRawNested2 = json_decode($coproRawNested2, true) ?: [];
-                        $coproMandat  = (is_array($coproRawData) ? ($coproRawData['mandat_en_cours'] ?? null) : null)
-                            ?? (is_array($coproRawNested2) ? ($coproRawNested2['mandat_en_cours'] ?? null) : null)
-                            ?? ($copro['statut'] ?? ($copro->statut ?? null));
-                        $coproDateFin = (is_array($coproRawData) ? ($coproRawData['date_fin_dernier_mandat'] ?? null) : null)
-                            ?? (is_array($coproRawNested2) ? ($coproRawNested2['date_fin_dernier_mandat'] ?? null) : null);
+                        $coproMandat  = is_array($coproRawData) ? ($coproRawData['mandat_en_cours'] ?? null) : null;
+                        if (!$coproMandat) $coproMandat = $copro['statut'] ?? ($copro->statut ?? null);
+                        $coproDateFin = is_array($coproRawData) ? ($coproRawData['date_fin_dernier_mandat'] ?? null) : null;
                         $coproMandatLower  = \Illuminate\Support\Str::ascii(mb_strtolower($coproMandat ?? ''));
-                        $coproMandatExpire = str_contains($coproMandatLower, 'expir') || str_contains($coproMandatLower, 'sans successeur');
+                        $coproMandatExpire = str_contains($coproMandatLower, 'expir')
+                            || str_contains($coproMandatLower, 'sans successeur')
+                            || (trim($coproMandatLower) === 'pas de mandat en cours' && !empty($coproDateFin));
                     @endphp
                     <div class="dr-record">
                         <div class="dr-record-header">
-                            <div class="dr-record-title">{{ dr_value($copro, ['nom_copropriete','nom_usage_copropriete']) }}</div>
-                            <div class="dr-status {{ $coproRepConnu ? 'success' : ($coproMandatExpire ? 'warning' : 'warning') }}">
+                            <div class="dr-record-title">{{ dr_value($copro, ['nom_usage_copropriete', 'nom_copropriete']) }}</div>
+                            <div class="dr-status {{ $coproRepConnu ? 'success' : 'warning' }}">
                                 <i class="fa-solid {{ $coproRepConnu ? 'fa-circle-check' : ($coproMandatExpire ? 'fa-clock-rotate-left' : 'fa-circle-info') }}"></i>
                                 Score {{ dr_value($copro, ['score_match'], '-') }}
                             </div>
                         </div>
                         <div class="dr-grid">
-                            <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['adresse_complete']) }}">
+                            <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['adresse_complete', 'adresse_reference']) }}">
                                 <div class="dr-field-label">Adresse RNIC <i class="fa-regular fa-copy"></i></div>
-                                <div class="dr-field-value">{{ dr_value($copro, ['adresse_complete']) }}<br>{{ dr_value($copro, ['code_postal']) }} {{ dr_value($copro, ['ville']) }}</div>
+                                <div class="dr-field-value">{{ dr_value($copro, ['adresse_complete', 'adresse_reference']) }}<br>{{ dr_value($copro, ['code_postal', 'code_postal_adresse']) }} {{ dr_value($copro, ['ville', 'commune_adresse']) }}</div>
                             </div>
                             <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['numero_immatriculation']) }}">
                                 <div class="dr-field-label">Immatriculation <i class="fa-regular fa-copy"></i></div>
@@ -1034,13 +991,13 @@ $rnbAddressesCount = $rnbAddresses->count();
                                     @endif
                                 </div>
                             </div>
-                            <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['siren_syndic']) }}">
+                            <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['siren_representant_legal', 'siren_syndic']) }}">
                                 <div class="dr-field-label">SIREN syndic <i class="fa-regular fa-copy"></i></div>
-                                <div class="dr-field-value"><code>{{ dr_value($copro, ['siren_syndic']) }}</code></div>
+                                <div class="dr-field-value"><code>{{ dr_value($copro, ['siren_representant_legal', 'siren_syndic']) }}</code></div>
                             </div>
-                            <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['siret_syndic']) }}">
+                            <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['siret_representant_legal', 'siret_syndic']) }}">
                                 <div class="dr-field-label">SIRET syndic <i class="fa-regular fa-copy"></i></div>
-                                <div class="dr-field-value"><code>{{ dr_value($copro, ['siret_syndic']) }}</code></div>
+                                <div class="dr-field-value"><code>{{ dr_value($copro, ['siret_representant_legal', 'siret_syndic']) }}</code></div>
                             </div>
                         </div>
                     </div>
@@ -1050,9 +1007,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══════════════════════════════════════════════════════════
-             SECTION 9 — SYNDICS & ENTREPRISES
-        ══════════════════════════════════════════════════════════ --}}
         <div class="dr-panel" id="panel-syndics">
             <div class="dr-panel-header">
                 <div class="dr-panel-title">
@@ -1095,7 +1049,6 @@ $rnbAddressesCount = $rnbAddresses->count();
             </div>
         </div>
 
-        {{-- ══ CTA ══════════════════════════════════════════════════ --}}
         <div class="dr-cta">
             <h3><i class="fa-solid fa-rocket"></i> Analyse immobilière enrichie</h3>
             <p>Continuez à exploiter les données adresse, cadastre, BDNB, RNIC, SIREN/SIRET et QPV/ZFU.</p>
