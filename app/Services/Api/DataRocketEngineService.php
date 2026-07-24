@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Auth;
 class DataRocketEngineService
 {
     // ─────────────────────────────────────────────────────────────
-    // CONSTRUCTEUR — sans PappersScraperService, sans SireneApi externe
+    // CONSTRUCTEUR
     // ─────────────────────────────────────────────────────────────
     public function __construct(
         protected AdresseApiService      $adresseApi,
@@ -29,13 +29,11 @@ class DataRocketEngineService
     // ─────────────────────────────────────────────────────────────
     public function searchByAddress(string $query): array
     {
-        // Éviter tout timeout Railway (30s par défaut)
         set_time_limit(120);
         ini_set('max_execution_time', 120);
 
         // ════════════════════════════════════════════════════════
         // 1. CACHE BASE — Adresse déjà connue ?
-        // Recherche par hash O(1) au lieu de LIKE O(n)
         // ════════════════════════════════════════════════════════
         $hashQuery    = Adresse::makeHash($query);
         $adresseCache = Adresse::where('adresse_hash', $hashQuery)
@@ -43,7 +41,6 @@ class DataRocketEngineService
             ->first();
 
         if ($adresseCache && $adresseCache->batiments->isNotEmpty()) {
-            // Adresse déjà enrichie → retour immédiat depuis la base
             return $this->buildResultFromCache($adresseCache, $query);
         }
 
@@ -77,12 +74,13 @@ class DataRocketEngineService
         }
 
         // ════════════════════════════════════════════════════════
-        // 3. QPV / ZFU — check local (table qpv_zones)
+        // 3. QPV / ZFU — SIG Ville WSA API (Basic Auth)
+        //    Remplace l'ancien ray casting local
         // ════════════════════════════════════════════════════════
-        $qpvChecks = $this->checkQpvForBanCandidates($geo);
+        $qpvChecks = $this->checkQpvViaSigVille($geo);
 
         // ════════════════════════════════════════════════════════
-        // 4. UPSERT ADRESSE — clé = hash (index unique O(1))
+        // 4. UPSERT ADRESSE
         // ════════════════════════════════════════════════════════
         $adresseComplete = $geo['adresse_complete'];
         $adresseHash     = Adresse::makeHash($adresseComplete);
@@ -91,8 +89,8 @@ class DataRocketEngineService
             ['adresse_hash' => $adresseHash],
             [
                 'adresse_complete' => $adresseComplete,
-                'numero'           => $geo['numero']     ?? null,
-                'voie'             => $geo['voie']       ?? null,
+                'numero'           => $geo['numero']      ?? null,
+                'voie'             => $geo['voie']        ?? null,
                 'code_postal'      => $geo['code_postal'] ?? null,
                 'ville'            => $geo['ville']       ?? null,
                 'code_insee'       => $geo['code_insee']  ?? null,
@@ -117,10 +115,10 @@ class DataRocketEngineService
         // ════════════════════════════════════════════════════════
         $rnb = $this->rnbApi->searchSmart([
             'address'         => $adresseComplete,
-            'latitude'        => $geo['latitude']    ?? null,
-            'longitude'       => $geo['longitude']   ?? null,
-            'plot_id'         => $cadastre[0]['id_parcelle'] ?? null,
-            'cle_interop_ban' => $geo['cle_interop_ban']    ?? null,
+            'latitude'        => $geo['latitude']              ?? null,
+            'longitude'       => $geo['longitude']             ?? null,
+            'plot_id'         => $cadastre[0]['id_parcelle']   ?? null,
+            'cle_interop_ban' => $geo['cle_interop_ban']       ?? null,
         ]);
 
         // ════════════════════════════════════════════════════════
@@ -168,8 +166,7 @@ class DataRocketEngineService
         }
 
         // ════════════════════════════════════════════════════════
-        // 8. PROPRIÉTAIRES BDNB — enrichissement LOCAL uniquement
-        // UNE seule requête SQL batch (pas de boucle API)
+        // 8. PROPRIÉTAIRES BDNB — enrichissement RNE local
         // ════════════════════════════════════════════════════════
         $proprietairesBdnb = $this->extractProprietairesFromBatiments($batiments);
         $proprietairesBdnb = $this->enrichProprietairesLocal($proprietairesBdnb);
@@ -204,7 +201,7 @@ class DataRocketEngineService
                 ['numero_immatriculation' => $coproUniqueKey],
                 [
                     'adresse_id'               => $adresse->id,
-                    'batiment_id'              => $batiments[0]->id          ?? null,
+                    'batiment_id'              => $batiments[0]->id              ?? null,
                     'nom_copropriete'          => $coproData['nom_copropriete']          ?? null,
                     'siren_copropriete'        => $coproData['siren_copropriete']        ?? null,
                     'nombre_lots_total'        => $coproData['nombre_lots_total']        ?? null,
@@ -223,8 +220,8 @@ class DataRocketEngineService
             );
 
             // ── Syndic ─────────────────────────────────────────
-            $sirenSyndic = preg_replace('/\D/', '', $coproData['siren_syndic']  ?? '');
-            $siretSyndic = preg_replace('/\D/', '', $coproData['siret_syndic']  ?? '');
+            $sirenSyndic = preg_replace('/\D/', '', $coproData['siren_syndic'] ?? '');
+            $siretSyndic = preg_replace('/\D/', '', $coproData['siret_syndic'] ?? '');
 
             if (!$sirenSyndic && strlen($siretSyndic) === 14) {
                 $sirenSyndic = substr($siretSyndic, 0, 9);
@@ -280,7 +277,7 @@ class DataRocketEngineService
         // ════════════════════════════════════════════════════════
         // 10. SAUVEGARDE RECHERCHE
         // ════════════════════════════════════════════════════════
-        $statut  = count($batiments) || count($coproprietes) || !empty($rnb['batiments'])
+        $statut = count($batiments) || count($coproprietes) || !empty($rnb['batiments'])
             ? 'trouve'
             : 'partiel';
 
@@ -332,7 +329,7 @@ class DataRocketEngineService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // CACHE — Retour rapide depuis la base sans appels API
+    // CACHE — Retour rapide depuis la base
     // ─────────────────────────────────────────────────────────────
     private function buildResultFromCache(Adresse $adresse, string $query): array
     {
@@ -381,16 +378,102 @@ class DataRocketEngineService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // ENRICHISSEMENT PROPRIÉTAIRES — RNE LOCAL UNIQUEMENT
-    // Une seule requête SQL pour tous les SIRENs (pas de boucle API)
+    // QPV / ZFU — SIG Ville WSA API (remplace l'ancien ray casting)
+    //
+    // Stratégie :
+    //   1. Appel principal avec coordonnées GPS (BAN → /api/xy.json)
+    //   2. Si plusieurs candidats BAN disponibles, on les teste aussi
+    //   3. Format de sortie identique à l'ancien : checks[] attendu
+    //      par result.blade.php (aucun changement côté vue)
+    // ─────────────────────────────────────────────────────────────
+    private function checkQpvViaSigVille(array $geo): array
+    {
+        // Candidats BAN (multi-points si disponibles, sinon point unique)
+        $candidates = $geo['ban_candidates'] ?? [];
+
+        if (empty($candidates)) {
+            $candidates = [[
+                'adresse'   => $geo['adresse_complete'] ?? null,
+                'latitude'  => $geo['latitude']         ?? null,
+                'longitude' => $geo['longitude']        ?? null,
+                'score'     => null,
+                'source'    => 'BAN',
+            ]];
+        }
+
+        $checks = [];
+
+        foreach ($candidates as $candidate) {
+            // ── Appel SIG Ville WSA — coordonnées en priorité ──
+            // Si pas de coords sur ce candidat, on passe l'adresse texte
+            $apiResult = $this->qpvEligibilityService->check(
+                lat        : isset($candidate['latitude'])  ? (float) $candidate['latitude']  : null,
+                lng        : isset($candidate['longitude']) ? (float) $candidate['longitude'] : null,
+                adresse    : $geo['adresse_complete'] ?? '',
+                commune    : $geo['ville']            ?? '',
+                codePostal : $geo['code_postal']      ?? '',
+            );
+
+            // Transformer matches API → format attendu par la blade
+            // blade lit : $check['result']['matches']['qp_2024']['found']
+            //                                                    ['nom']
+            //                                                    ['code']
+            $matchesBlade = [];
+            foreach (['qp_2024', 'qp_2015', 'zfu'] as $type) {
+                $m = $apiResult['matches'][$type] ?? null;
+                $matchesBlade[$type] = [
+                    'found'     => $apiResult[$type],
+                    'code'      => $m['code'] ?? null,
+                    'nom'       => $m['nom']  ?? null,
+                    'bande_300' => $m['bande_300'] ?? false,
+                    'bande_500' => $m['bande_500'] ?? false,
+                ];
+            }
+
+            $checks[] = [
+                'candidate' => [
+                    'adresse'   => $candidate['adresse']   ?? $geo['adresse_complete'] ?? null,
+                    'score'     => $candidate['score']     ?? $apiResult['similitude'] ?? null,
+                    'latitude'  => $candidate['latitude']  ?? null,
+                    'longitude' => $candidate['longitude'] ?? null,
+                    'source'    => $candidate['source']    ?? 'BAN',
+                    // Infos SIG Ville pour debug
+                    'loccom_ref'  => $apiResult['loccom_ref']  ?? null,
+                    'locvoie_ref' => $apiResult['locvoie_ref'] ?? null,
+                ],
+                'result' => [
+                    'qp_2024' => $apiResult['qp_2024'],
+                    'qp_2015' => $apiResult['qp_2015'],
+                    'zfu'     => $apiResult['zfu'],
+                    'matches' => $matchesBlade,
+                ],
+            ];
+        }
+
+        $hasZone = collect($checks)->contains(fn($item) =>
+            ($item['result']['qp_2024'] ?? false)
+            || ($item['result']['qp_2015'] ?? false)
+            || ($item['result']['zfu']    ?? false)
+        );
+
+        return [
+            'eligible'          => !$hasZone,
+            'message'           => $hasZone
+                ? 'Adresse non éligible : située en QPV/ZFU selon SIG Ville.'
+                : 'Adresse éligible : aucun point BAN en QPV/ZFU.',
+            'strategy'          => 'sigville_wsa_api',
+            'candidates_tested' => count($checks),
+            'checks'            => $checks,
+        ];
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // ENRICHISSEMENT PROPRIÉTAIRES — RNE LOCAL
     // ─────────────────────────────────────────────────────────────
     private function enrichProprietairesLocal(array $proprietaires): array
     {
-        if (empty($proprietaires)) {
-            return [];
-        }
+        if (empty($proprietaires)) return [];
 
-        // Collecter tous les SIRENs valides
         $sirens = collect($proprietaires)
             ->pluck('siren')
             ->filter(fn($s) => $s && strlen(preg_replace('/\D/', '', (string) $s)) === 9)
@@ -399,11 +482,8 @@ class DataRocketEngineService
             ->values()
             ->all();
 
-        // UNE SEULE requête SQL pour tous les SIRENs
         $rneMap = !empty($sirens)
-            ? RneEntreprise::whereIn('siren', $sirens)
-                ->get()
-                ->keyBy('siren')
+            ? RneEntreprise::whereIn('siren', $sirens)->get()->keyBy('siren')
             : collect();
 
         return collect($proprietaires)
@@ -412,7 +492,7 @@ class DataRocketEngineService
                 $rne   = $siren ? $rneMap->get($siren) : null;
 
                 return [
-                    'nom'                 => $rne?->denomination      ?? $item['nom']  ?? null,
+                    'nom'                 => $rne?->denomination      ?? $item['nom'] ?? null,
                     'nom_bdnb'            => $item['nom']             ?? null,
                     'siren'               => $siren                   ?: null,
                     'siret'               => $rne?->siret_siege       ?? null,
@@ -438,7 +518,7 @@ class DataRocketEngineService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // SYNDIC — RNE LOCAL UNIQUEMENT (pas d'appel Sirene API externe)
+    // SYNDIC — RNE LOCAL
     // ─────────────────────────────────────────────────────────────
     private function createOrUpdateSyndic(
         ?string $sirenSyndic,
@@ -446,23 +526,19 @@ class DataRocketEngineService
         ?string $syndicNom,
         array   $coproData
     ): Syndic {
-
         $rne = $sirenSyndic
             ? RneEntreprise::where('siren', $sirenSyndic)->first()
             : null;
 
         $uniqueKey = $sirenSyndic
-            ?: ($siretSyndic ? substr($siretSyndic, 0, 9) : null);
-
-        if (!$uniqueKey && $syndicNom) {
-            $uniqueKey = substr(md5($syndicNom), 0, 9);
-        }
+            ?: ($siretSyndic ? substr($siretSyndic, 0, 9) : null)
+            ?: ($syndicNom   ? substr(md5($syndicNom), 0, 9) : null);
 
         return Syndic::updateOrCreate(
             ['siren' => $uniqueKey],
             [
-                'nom'                 => $rne?->denomination  ?? $syndicNom   ?? null,
-                'siret'               => $rne?->siret_siege   ?? $siretSyndic ?? null,
+                'nom'                 => $rne?->denomination      ?? $syndicNom   ?? null,
+                'siret'               => $rne?->siret_siege       ?? $siretSyndic ?? null,
                 'forme_juridique'     => $rne?->forme_juridique   ?? null,
                 'activite'            => $rne?->activite          ?? null,
                 'capital_social'      => $rne?->capital_formatted ?? $rne?->capital_social ?? null,
@@ -476,9 +552,9 @@ class DataRocketEngineService
                 'url_pappers'         => $sirenSyndic
                     ? "https://www.pappers.fr/entreprise/{$sirenSyndic}"
                     : null,
-                'adresse_complete'    => $rne?->adresse_complete  ?? null,
-                'code_postal'         => $rne?->code_postal        ?? null,
-                'ville'               => $rne?->ville              ?? null,
+                'adresse_complete'    => $rne?->adresse_complete ?? null,
+                'code_postal'         => $rne?->code_postal      ?? null,
+                'ville'               => $rne?->ville            ?? null,
                 'raw_data'            => [
                     'rnic' => $coproData,
                     'rne'  => $rne?->toArray(),
@@ -527,7 +603,7 @@ class DataRocketEngineService
     }
 
     // ─────────────────────────────────────────────────────────────
-    // SÉLECTION BÂTIMENT PRINCIPAL (score BDNB)
+    // SÉLECTION BÂTIMENT PRINCIPAL
     // ─────────────────────────────────────────────────────────────
     private function selectMainBuildings(array $batiments): array
     {
@@ -565,55 +641,12 @@ class DataRocketEngineService
     private function calculateScore(array $batiment): float
     {
         $score = 0;
-        if (($batiment['type_batiment']    ?? null) === 'collectif')          $score += 30;
-        if (($batiment['nombre_logements'] ?? 0) >= 10)                       $score += 25;
-        if (($batiment['nombre_niveaux']   ?? 0) >= 3)                        $score += 15;
+        if (($batiment['type_batiment']    ?? null) === 'collectif')       $score += 30;
+        if (($batiment['nombre_logements'] ?? 0) >= 10)                    $score += 25;
+        if (($batiment['nombre_niveaux']   ?? 0) >= 3)                     $score += 15;
         if (!empty($batiment['annee_construction'])
-            && $batiment['annee_construction'] < 1990)                        $score += 20;
-        if (in_array($batiment['classe_dpe'] ?? null, ['E','F','G'], true))   $score += 10;
+            && $batiment['annee_construction'] < 1990)                     $score += 20;
+        if (in_array($batiment['classe_dpe'] ?? null, ['E','F','G'], true)) $score += 10;
         return min($score, 100);
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // QPV / ZFU — vérification multi-points BAN (table locale)
-    // ─────────────────────────────────────────────────────────────
-    private function checkQpvForBanCandidates(array $geo): array
-    {
-        $candidates = $geo['ban_candidates'] ?? [];
-
-        if (empty($candidates)) {
-            $candidates = [[
-                'adresse'  => $geo['adresse_complete'] ?? null,
-                'latitude' => $geo['latitude']         ?? null,
-                'longitude'=> $geo['longitude']        ?? null,
-                'score'    => null,
-                'source'   => 'BAN',
-            ]];
-        }
-
-        $checks = [];
-        foreach ($candidates as $candidate) {
-            $check    = $this->qpvEligibilityService->check(
-                isset($candidate['latitude'])  ? (float) $candidate['latitude']  : null,
-                isset($candidate['longitude']) ? (float) $candidate['longitude'] : null
-            );
-            $checks[] = ['candidate' => $candidate, 'result' => $check];
-        }
-
-        $hasZone = collect($checks)->contains(fn($item) =>
-            ($item['result']['qp_2024'] ?? false)
-            || ($item['result']['qp_2015'] ?? false)
-            || ($item['result']['zfu']    ?? false)
-        );
-
-        return [
-            'eligible'          => !$hasZone,
-            'message'           => $hasZone
-                ? 'Adresse non éligible : au moins un point BAN est situé en QPV/ZFU.'
-                : 'Adresse éligible : aucun des points BAN testés n\'est en QPV/ZFU.',
-            'strategy'          => 'multi_points_ban',
-            'candidates_tested' => count($checks),
-            'checks'            => $checks,
-        ];
     }
 }

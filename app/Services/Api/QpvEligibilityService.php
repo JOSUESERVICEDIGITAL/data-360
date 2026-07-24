@@ -2,137 +2,182 @@
 
 namespace App\Services\Api;
 
-use App\Models\Back\QpvZone;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
+/**
+ * QpvEligibilityService — SIG Ville WSA API v2
+ * ─────────────────────────────────────────────────────────────
+ * Base URL  : https://wsa.sig.ville.gouv.fr
+ * Auth      : HTTP Basic Auth (username + password)
+ * Endpoints :
+ *   /api/xy.json  → coordonnées GPS (PRINCIPAL)
+ *   /api/v2.json  → adresse texte   (FALLBACK)
+ * ─────────────────────────────────────────────────────────────
+ */
 class QpvEligibilityService
 {
-    public function check(?float $latitude, ?float $longitude): array
+    private string $baseUrl;
+    private string $username;
+    private string $password;
+    private int    $timeout = 10;
+
+    public function __construct()
     {
-        if (!$latitude || !$longitude) {
-            return [
-                'eligible' => null,
-                'message' => 'Coordonnées GPS manquantes.',
-                'qp_2024' => false,
-                'qp_2015' => false,
-                'zfu' => false,
-                'matches' => [],
-            ];
+        $this->baseUrl  = rtrim(config('services.sigville.url',      'https://wsa.sig.ville.gouv.fr'), '/');
+        $this->username = config('services.sigville.username', '');
+        $this->password = config('services.sigville.password', '');
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // POINT D'ENTRÉE PRINCIPAL
+    // ════════════════════════════════════════════════════════════
+
+    public function check(
+        ?float $lat        = null,
+        ?float $lng        = null,
+        string $adresse    = '',
+        string $commune    = '',
+        string $codePostal = ''
+    ): array {
+        // Cache 7 jours
+        $cacheKey = ($lat !== null && $lng !== null)
+            ? 'qpv_xy_'  . round($lat, 5) . '_' . round($lng, 5)
+            : 'qpv_adr_' . md5($adresse . $codePostal . $commune);
+
+        return Cache::remember($cacheKey, 604800, function () use ($lat, $lng, $adresse, $commune, $codePostal) {
+            return $this->fetchFromApi($lat, $lng, $adresse, $commune, $codePostal);
+        });
+    }
+
+    public function isEligible(?float $lat, ?float $lng, string $adresse = '', string $commune = '', string $codePostal = ''): bool
+    {
+        $r = $this->check($lat, $lng, $adresse, $commune, $codePostal);
+        return !($r['qp_2024'] || $r['qp_2015'] || $r['zfu']);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // APPELS API
+    // ════════════════════════════════════════════════════════════
+
+    private function fetchFromApi(?float $lat, ?float $lng, string $adresse, string $commune, string $codePostal): array
+    {
+        try {
+            return ($lat !== null && $lng !== null)
+                ? $this->callXyEndpoint($lat, $lng)
+                : $this->callAddressEndpoint($adresse, $commune, $codePostal);
+        } catch (\Throwable $e) {
+            Log::warning('QpvEligibilityService erreur: ' . $e->getMessage());
+            return $this->emptyResult();
+        }
+    }
+
+    /**
+     * /api/xy.json — géoréférencement par coordonnées GPS
+     * ✅ Méthode principale (on a lat/lng depuis la BAN)
+     */
+    private function callXyEndpoint(float $lat, float $lng): array
+    {
+        $response = Http::withBasicAuth($this->username, $this->password)
+            ->timeout($this->timeout)
+            ->get($this->baseUrl . '/api/xy.json', [
+                'x'             => $lng,            // longitude
+                'y'             => $lat,            // latitude
+                'type_quartier' => 'QP,QP_2015,ZFU',
+            ]);
+
+        if ($response->failed()) {
+            Log::warning("SIG Ville /api/xy.json → HTTP {$response->status()}");
+            return $this->emptyResult();
         }
 
-        $matches = [];
+        return $this->parseResponse($response->json());
+    }
 
-        foreach (['qp_2024', 'qp_2015', 'zfu'] as $type) {
-            $zone = $this->findContainingZone($type, $latitude, $longitude);
-
-            $matches[$type] = $zone ? [
-                'found' => true,
-                'code' => $zone->code,
-                'nom' => $zone->nom,
-            ] : [
-                'found' => false,
-                'code' => null,
-                'nom' => null,
-            ];
+    /**
+     * /api/v2.json — géoréférencement par adresse texte (BAN post-2024)
+     * ✅ Fallback si pas de coordonnées
+     */
+    private function callAddressEndpoint(string $adresse, string $commune, string $codePostal): array
+    {
+        if (empty($adresse) && empty($commune)) {
+            return $this->emptyResult();
         }
 
-        $isInQp2024 = $matches['qp_2024']['found'];
-        $isInQp2015 = $matches['qp_2015']['found'];
-        $isInZfu = $matches['zfu']['found'];
+        $response = Http::withBasicAuth($this->username, $this->password)
+            ->timeout($this->timeout)
+            ->get($this->baseUrl . '/api/v2.json', [
+                'adresse'       => $adresse,
+                'commune'       => $commune,
+                'code_postal'   => $codePostal,
+                'type_quartier' => 'QP,QP_2015,ZFU',
+            ]);
 
-        $eligible = !$isInQp2024 && !$isInQp2015 && !$isInZfu;
+        if ($response->failed()) {
+            Log::warning("SIG Ville /api/v2.json → HTTP {$response->status()}");
+            return $this->emptyResult();
+        }
 
+        return $this->parseResponse($response->json());
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // PARSING RÉPONSE
+    // Variables issues du PDF guide utilisateur SIG Ville 2024
+    // ════════════════════════════════════════════════════════════
+
+    private function parseResponse(mixed $data): array
+    {
+        if (empty($data)) return $this->emptyResult();
+
+        $items  = isset($data[0]) ? $data : [$data];
+        $result = $this->emptyResult();
+
+        foreach ($items as $item) {
+            $locadr = strtoupper(trim($item['LOCADR_REF']    ?? ''));
+            $type   = strtoupper(trim($item['TYPE_QUARTIER'] ?? ''));
+
+            // Stocker les métadonnées de localisation (une seule fois)
+            if ($result['loccom_ref'] === null) {
+                $result['loccom_ref']  = $item['LOCCOM_REF']      ?? null;
+                $result['locvoie_ref'] = $item['LOCVOIE_REF']     ?? null;
+                $result['similitude']  = $item['SIMILITUDE_VOIE'] ?? null;
+            }
+
+            if ($locadr !== 'OUI') continue;
+
+            // Adresse dans un quartier → mapper sur le bon type
+            $match = [
+                'found'     => true,
+                'code'      => $item['CODE_QUARTIER'] ?? null,
+                'nom'       => $item['NOM_QUARTIER']  ?? null,
+                'bande_300' => strtoupper($item['QP_BANDE_300'] ?? '') === 'OUI',
+                'bande_500' => strtoupper($item['QP_BANDE_500'] ?? '') === 'OUI',
+                'score'     => $item['SCORE']         ?? null,
+            ];
+
+            match ($type) {
+                'QP'      => [$result['qp_2024'] = true, $result['matches']['qp_2024'] = $match],
+                'QP_2015' => [$result['qp_2015'] = true, $result['matches']['qp_2015'] = $match],
+                'ZFU'     => [$result['zfu']     = true, $result['matches']['zfu']     = $match],
+                default   => null,
+            };
+        }
+
+        return $result;
+    }
+
+    private function emptyResult(): array
+    {
         return [
-            'eligible' => $eligible,
-            'message' => $eligible
-                ? 'Adresse éligible : hors QP 2024, hors QP 2015 et hors ZFU.'
-                : 'Adresse non éligible : située dans au moins une zone prioritaire.',
-            'qp_2024' => $isInQp2024,
-            'qp_2015' => $isInQp2015,
-            'zfu' => $isInZfu,
-            'matches' => $matches,
+            'qp_2024'     => false,
+            'qp_2015'     => false,
+            'zfu'         => false,
+            'matches'     => [],
+            'loccom_ref'  => null,
+            'locvoie_ref' => null,
+            'similitude'  => null,
         ];
-    }
-
-    private function findContainingZone(string $type, float $lat, float $lng): ?QpvZone
-    {
-        $zones = QpvZone::where('type', $type)->get();
-
-        foreach ($zones as $zone) {
-            $geometry = json_decode($zone->geojson, true);
-
-            if (!$geometry) {
-                continue;
-            }
-
-            if ($this->pointInGeometry($lng, $lat, $geometry)) {
-                return $zone;
-            }
-        }
-
-        return null;
-    }
-
-    private function pointInGeometry(float $x, float $y, array $geometry): bool
-    {
-        $type = $geometry['type'] ?? null;
-        $coordinates = $geometry['coordinates'] ?? [];
-
-        if ($type === 'Polygon') {
-            return $this->pointInPolygon($x, $y, $coordinates);
-        }
-
-        if ($type === 'MultiPolygon') {
-            foreach ($coordinates as $polygon) {
-                if ($this->pointInPolygon($x, $y, $polygon)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private function pointInPolygon(float $x, float $y, array $polygon): bool
-    {
-        if (empty($polygon[0])) {
-            return false;
-        }
-
-        $inside = $this->rayCasting($x, $y, $polygon[0]);
-
-        if (!$inside) {
-            return false;
-        }
-
-        // Exclure les trous intérieurs du polygone
-        for ($i = 1; $i < count($polygon); $i++) {
-            if ($this->rayCasting($x, $y, $polygon[$i])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private function rayCasting(float $x, float $y, array $points): bool
-    {
-        $inside = false;
-        $count = count($points);
-
-        for ($i = 0, $j = $count - 1; $i < $count; $j = $i++) {
-            $xi = (float) $points[$i][0];
-            $yi = (float) $points[$i][1];
-            $xj = (float) $points[$j][0];
-            $yj = (float) $points[$j][1];
-
-            $intersect = (($yi > $y) !== ($yj > $y))
-                && ($x < ($xj - $xi) * ($y - $yi) / (($yj - $yi) ?: 0.0000001) + $xi);
-
-            if ($intersect) {
-                $inside = !$inside;
-            }
-        }
-
-        return $inside;
     }
 }
