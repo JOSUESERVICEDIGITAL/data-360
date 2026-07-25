@@ -227,68 +227,158 @@ class CoproprieteApiService
     // ═══════════════════════════════════════════════════════════════
     // NORMALIZE — FIX PRINCIPAL : filtre anti-placeholder
     // ═══════════════════════════════════════════════════════════════
-    public function normalize(array $item): array
-    {
-        $representantNom = $this->cleanRepresentativeName(
-            $item['representant_legal_nom']
-                ?? $item['syndic_nom']
-                ?? $item['representant']
-                ?? null
-        );
-
-        $sirenSyndic = $this->cleanIdentifier($item['siren_syndic'] ?? null);
-        $siretSyndic = $this->cleanIdentifier($item['siret_syndic'] ?? null);
-
-        $isSharedHiddenIdentity = $this->isHiddenOpenDataIdentity($representantNom);
-        $isPlaceholderNom       = $this->isPlaceholderValue($representantNom);
-
-        // Un nom "non connu", "inconnu", etc. ne compte PAS comme un
-        // représentant connu — c'est l'absence de donnée déguisée en texte
-        // par certaines versions du CSV RNIC.
-        $representantConnu = (
-            (!empty($representantNom) && !$isSharedHiddenIdentity && !$isPlaceholderNom)
-            || !empty($sirenSyndic)
-            || !empty($siretSyndic)
-        );
-
-        // Si le nom est un placeholder, on le neutralise complètement
-        // pour ne jamais l'afficher tel quel dans l'UI (ex: "non connu"
-        // affiché comme si c'était un vrai nom de syndic).
-        $representantNomFinal = ($representantConnu && !$isPlaceholderNom)
-            ? $representantNom
-            : null;
-
-        $rawData = $item['raw_data'] ?? $item;
-        if (is_string($rawData)) {
-            $rawData = json_decode($rawData, true) ?: [];
-        }
-
-        return [
-            'numero_immatriculation'    => $item['numero_immatriculation'] ?? null,
-            'nom_copropriete'           => $item['nom_copropriete'] ?? null,
-            'siren_copropriete'         => $item['siren_copropriete'] ?? null,
-            'nombre_lots_total'         => $item['nombre_lots_total'] ?? null,
-            'nombre_lots_habitation'    => $item['nombre_lots_habitation'] ?? null,
-            'nombre_batiments'          => $item['nombre_batiments'] ?? null,
-            'nombre_adresses_associees' => $item['nombre_adresses_associees'] ?? null,
-            'statut'                    => $item['statut'] ?? null,
-            'date_immatriculation'      => $item['date_immatriculation'] ?? null,
-            'representant_legal_connu'  => $representantConnu,
-            'representant_legal_type'   => $representantConnu ? ($item['representant_legal_type'] ?? 'syndic') : null,
-            'message_representant'      => $representantConnu ? null : 'Pas de représentant légal connu',
-            'representant_legal_nom'    => $representantNomFinal,
-            'syndic_nom'                => $representantConnu ? ($item['syndic_nom'] ?? $representantNomFinal) : null,
-            'siren_syndic'              => $representantConnu ? $sirenSyndic : null,
-            'siret_syndic'              => $representantConnu ? $siretSyndic : null,
-            'score_match'               => $item['score_match'] ?? null,
-            'adresse_rnic_match'        => $item['adresse_rnic_match'] ?? null,
-            'adresse_match_exact'       => $item['adresse_match_exact'] ?? false,
-            'adresses_associees_liste'  => $item['adresses_associees_liste'] ?? [],
-            '_source'                   => $item['_source'] ?? 'local',
-            '_lien_officiel'            => $item['_lien_officiel'] ?? null,
-            'raw_data'                  => $rawData,
-        ];
+   public function normalize(array $item): array
+{
+    // Extraire et aplatir raw_data pour accéder aux vrais champs RNIC 2024
+    $rawData = $item['raw_data'] ?? [];
+    if (is_string($rawData)) {
+        $rawData = json_decode($rawData, true) ?: [];
     }
+    if (!is_array($rawData)) {
+        $rawData = [];
+    }
+
+    // raw_data imbriqué
+    $rawNested = $rawData['raw_data'] ?? [];
+    if (is_string($rawNested)) {
+        $rawNested = json_decode($rawNested, true) ?: [];
+    }
+
+    // Fusion complète : item + raw_data imbriqué + raw_data niveau 1
+    // raw_data niveau 1 est prioritaire car contient les vrais champs RNIC
+    $all = array_merge($item, is_array($rawNested) ? $rawNested : [], $rawData);
+
+    // ── REPRÉSENTANT NOM — cherche dans tous les champs possibles ──
+    $representantNom = null;
+    $nomKeys = [
+        'raison_sociale_representant_legal',  // vrai champ RNIC 2024
+        'identification_representant_legal',   // vrai champ RNIC 2024
+        'representant_legal_nom',              // colonne DB normalisée
+        'syndic_nom',                          // ancien format
+        'nom_syndic',                          // variante
+    ];
+    foreach ($nomKeys as $key) {
+        $val = $all[$key] ?? null;
+        if ($val !== null && trim((string)$val) !== '') {
+            $representantNom = (string)$val;
+            break;
+        }
+    }
+
+    // ── SIREN — cherche dans tous les champs possibles ────────────
+    $sirenSyndic = null;
+    $sirenKeys = [
+        'siren_representant_legal',   // vrai champ RNIC 2024
+        'siren_syndic',               // ancien format
+    ];
+    foreach ($sirenKeys as $key) {
+        $val = preg_replace('/\D/', '', (string)($all[$key] ?? ''));
+        if (strlen($val) === 9) {
+            $sirenSyndic = $val;
+            break;
+        }
+    }
+
+    // ── SIRET — cherche dans tous les champs possibles ────────────
+    $siretSyndic = null;
+    $siretKeys = [
+        'siret_representant_legal',   // vrai champ RNIC 2024
+        'siret_syndic',               // ancien format
+    ];
+    foreach ($siretKeys as $key) {
+        $val = preg_replace('/\D/', '', (string)($all[$key] ?? ''));
+        if (strlen($val) === 14) {
+            $siretSyndic = $val;
+            break;
+        }
+    }
+
+    // ── NETTOYAGE NOM ─────────────────────────────────────────────
+    if ($representantNom) {
+        $check = strtolower(trim($representantNom));
+        $placeholders = ['non connu', 'non renseigne', 'inconnu', '-', '', 'n a', 'na', 'nc'];
+        if (in_array($check, $placeholders, true)
+            || str_contains($check, 'identite non partagee')) {
+            $representantNom = null;
+        }
+    }
+
+    // ── TYPE SYNDIC ───────────────────────────────────────────────
+    $typeSyndic = $all['type_syndic'] ?? $all['representant_legal_type'] ?? null;
+
+    // ── MANDAT ───────────────────────────────────────────────────
+    $mandatEnCours = $all['mandat_en_cours'] ?? $all['statut'] ?? null;
+    $dateFinMandat = $all['date_fin_dernier_mandat'] ?? null;
+
+    // ── REPRÉSENTANT CONNU ? ──────────────────────────────────────
+    $representantConnu = !empty($representantNom) || !empty($sirenSyndic) || !empty($siretSyndic);
+
+    // ── NOM COPROPRIÉTÉ ───────────────────────────────────────────
+    $nomCopro = $all['nom_usage_copropriete'] ?? $all['nom_copropriete'] ?? null;
+
+    // ── ADRESSE ───────────────────────────────────────────────────
+    $adresseComplete = $all['adresse_reference']
+                    ?? $all['adresse_de_reference']
+                    ?? $all['adresse_complete']
+                    ?? $all['adresse_rnic_match']
+                    ?? null;
+
+    $codePostal = $all['code_postal_adresse'] ?? $all['code_postal'] ?? null;
+    $ville      = $all['commune_adresse'] ?? $all['nom_officiel_commune'] ?? $all['ville'] ?? null;
+
+    // ── LOTS ──────────────────────────────────────────────────────
+    $nbLotsTotal      = $all['nombre_total_lots']      ?? $all['nombre_lots_total']      ?? null;
+    $nbLotsHabitation = $all['nombre_lots_habitation'] ?? null;
+
+    // ── MESSAGE ───────────────────────────────────────────────────
+    if ($representantConnu) {
+        $messageRep = null;
+    } elseif (!empty($mandatEnCours)) {
+        $messageRep = $mandatEnCours;
+    } else {
+        $messageRep = 'Pas de représentant légal connu';
+    }
+
+    return [
+        'numero_immatriculation'            => $all['numero_immatriculation']    ?? null,
+        'nom_copropriete'                   => $nomCopro,
+        'siren_copropriete'                 => $all['siren_copropriete']         ?? null,
+        'nombre_lots_total'                 => $nbLotsTotal,
+        'nombre_lots_habitation'            => $nbLotsHabitation,
+        'nombre_batiments'                  => $all['nombre_batiments']          ?? null,
+        'nombre_adresses_associees'         => $all['nombre_adresses_associees'] ?? null,
+        'statut'                            => $mandatEnCours,
+        'mandat_en_cours'                   => $mandatEnCours,
+        'date_fin_dernier_mandat'           => $dateFinMandat,
+        'date_immatriculation'              => $all['date_immatriculation']      ?? null,
+        'representant_legal_connu'          => $representantConnu,
+        'representant_legal_nom'            => $representantConnu ? $representantNom : null,
+        'representant_legal_type'           => $representantConnu ? $typeSyndic   : null,
+        'syndic_nom'                        => $representantConnu ? $representantNom : null,
+        'type_syndic'                       => $representantConnu ? $typeSyndic   : null,
+        'siren_syndic'                      => $representantConnu ? $sirenSyndic  : null,
+        'siret_syndic'                      => $representantConnu ? $siretSyndic  : null,
+        'siren_representant_legal'          => $representantConnu ? $sirenSyndic  : null,
+        'siret_representant_legal'          => $representantConnu ? $siretSyndic  : null,
+        'raison_sociale_representant_legal' => $representantConnu ? $representantNom : null,
+        'identification_representant_legal' => $representantConnu ? $representantNom : null,
+        'message_representant'              => $messageRep,
+        'adresse_complete'                  => $adresseComplete,
+        'adresse_reference'                 => $adresseComplete,
+        'code_postal'                       => $codePostal,
+        'code_postal_adresse'               => $codePostal,
+        'ville'                             => $ville,
+        'commune_adresse'                   => $ville,
+        'nom_officiel_commune'              => $ville,
+        'score_match'                       => $all['score_match']               ?? null,
+        'adresse_rnic_match'                => $all['adresse_rnic_match']        ?? null,
+        'adresse_match_exact'               => $all['adresse_match_exact']       ?? false,
+        'adresses_associees_liste'          => $all['adresses_associees_liste']  ?? [],
+        '_source'                           => $all['_source']                   ?? 'local',
+        '_lien_officiel'                    => $all['_lien_officiel']            ?? null,
+        'raw_data'                          => $rawData ?: $item,
+    ];
+}
 
     // ─────────────────────────────────────────────────────────────
     // DÉTECTION DE VALEUR PLACEHOLDER (FIX PRINCIPAL)
