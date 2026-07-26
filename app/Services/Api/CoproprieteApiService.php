@@ -32,51 +32,72 @@ class CoproprieteApiService
     ) {}
 
     public function searchByAddress(string $adresse, ?string $codePostal = null, ?string $ville = null): array
-{
-    $cpDepuisAdresse = $this->extractPostalCode($adresse);
-    $codePostalFinal = $cpDepuisAdresse ?? $codePostal;
+    {
+        $cpDepuisAdresse = $this->extractPostalCode($adresse);
+        $codePostalFinal = $cpDepuisAdresse ?? $codePostal;
 
-    // ── 1. Recherche locale ───────────────────────────────
-    $results = $this->searchLocal($adresse, $codePostalFinal, $ville);
+        // ── 1. Recherche locale ───────────────────────────────
+        $results = $this->searchLocal($adresse, $codePostalFinal, $ville);
 
-    // ── 2. Fallback API si rien trouvé ────────────────────
-    if (empty($results)) {
-        return $this->searchRnicApi($adresse, $codePostalFinal, $ville);
-    }
+        // ── 2. Fallback API si rien trouvé ────────────────────
+        if (empty($results)) {
+            return $this->searchRnicApi($adresse, $codePostalFinal, $ville);
+        }
 
-    // ── 3. ✅ NOUVEAU — Vérification live si mandat expiré ──
-    // Si le résultat local montre un mandat expiré ET pas de représentant
-    // → interroger l'API officielle pour avoir les données fraîches
-    $hasExpiredMandat = collect($results)->contains(function ($r) {
-        $raw = $r['raw_data'] ?? [];
-        if (is_string($raw)) $raw = json_decode($raw, true) ?: [];
-        $mandat = $raw['mandat_en_cours'] ?? $r['statut'] ?? null;
-        $dateFin = $raw['date_fin_dernier_mandat'] ?? null;
-        $hasRep = !empty($r['representant_legal_nom'])
-               || !empty($r['siren_syndic'] ?? $raw['siren_representant_legal'] ?? null);
-        return !$hasRep && !empty($dateFin) && !empty($mandat);
-    });
+        // ── 3. Vérification live si ancien mandat détecté ──
+        // Si la donnée locale contient uniquement un ancien représentant,
+        // on vérifie auprès du RNIC public pour récupérer une éventuelle mise à jour.
 
-    if ($hasExpiredMandat) {
-        // Interroger l'API live pour données fraîches
-        $liveResults = $this->searchRnicApi($adresse, $codePostalFinal, $ville);
+        $hasExpiredMandat = collect($results)->contains(function ($r) {
 
-        if (!empty($liveResults)) {
-            // Préférer les données live si elles ont un représentant actif
-            $liveHasRep = collect($liveResults)->contains(function ($r) {
-                $rep = $r['representant_legal'] ?? [];
-                return ($rep['present'] ?? false) && !empty($rep['nom'] ?? $rep['siret'] ?? null);
-            });
+            return ($r['ancien_representant'] ?? false) === true;
+        });
 
-            if ($liveHasRep) {
-                // Données live plus fraîches → les utiliser
-                return $liveResults;
+
+        if ($hasExpiredMandat) {
+
+            // Interroger l'API officielle
+            $liveResults = $this->searchRnicApi(
+                $adresse,
+                $codePostalFinal,
+                $ville
+            );
+
+
+            if (!empty($liveResults)) {
+
+
+                // Vérifier si le RNIC public possède un représentant actif
+                $liveHasActiveRep = collect($liveResults)->contains(function ($r) {
+
+
+                    $nom = $r['representant_legal_nom'] ?? null;
+                    $siren = $r['siren_syndic'] ?? null;
+                    $siret = $r['siret_syndic'] ?? null;
+
+
+                    return !empty($nom)
+                        || !empty($siren)
+                        || !empty($siret);
+                });
+
+
+
+                if ($liveHasActiveRep) {
+
+                    // Les données officielles sont plus récentes
+                    return $liveResults;
+                }
+
+
+                // Sinon on garde les données locales
+                // car l'ancien mandat reste une information historique
+
             }
         }
-    }
 
-    return $results;
-}
+        return $results;
+    }
 
     private function searchLocal(string $adresse, ?string $codePostal, ?string $ville): array
     {
@@ -258,26 +279,62 @@ class CoproprieteApiService
         // une date de fin → il y avait un syndic qui peut renouveler.
         // On considère AVEC représentant = nos clients voient l'info.
         // ════════════════════════════════════════════════════════
-        $hasActiveRep = !empty($repNom) || !empty($sirenRep) || !empty($siretRep);
-        $mandatExpire = !$hasActiveRep && !empty($dateFinMandat);
+        /*
+|--------------------------------------------------------------------------
+| Gestion représentant conforme annuaire officiel
+|--------------------------------------------------------------------------
+*/
 
-        // Avec représentant si :
-        //   - nom ou siren ou siret connu (mandat actif)
-        //   - OU mandat expiré avec date connue (gestionnaire de fait)
-        $repConnu = !empty($repNom)
+        // Représentant déclaré
+        $hasRepresentative =
+            !empty($repNom)
             || !empty($sirenRep)
-            || !empty($siretRep)
-            || $mandatExpire;
+            || !empty($siretRep);
 
-        // Message adapté au statut du mandat
-        if (!$repConnu) {
-            $messageRep = 'Pas de représentant légal connu';
-        } elseif ($mandatExpire) {
-            $messageRep = 'Mandat expiré le ' . $dateFinMandat . ' — renouvellement en attente';
-        } else {
-            $messageRep = null; // mandat actif → pas de message
+
+        // Date de fin de mandat connue
+        $mandatExpire = false;
+
+        if (!empty($dateFinMandat)) {
+
+            try {
+
+                $dateFin = \Carbon\Carbon::parse($dateFinMandat);
+
+                $mandatExpire = $dateFin->isPast();
+            } catch (\Exception $e) {
+
+                $mandatExpire = false;
+            }
         }
 
+
+        /*
+|--------------------------------------------------------------------------
+| Règle finale
+|--------------------------------------------------------------------------
+*/
+
+        // Représentant actif uniquement
+        $repConnu = $hasRepresentative && !$mandatExpire;
+
+
+        // Ancien représentant uniquement
+        $ancienRepresentant = $hasRepresentative && $mandatExpire;
+
+
+        if ($repConnu) {
+
+            $messageRep = null;
+        } elseif ($ancienRepresentant) {
+
+            $messageRep =
+                'Ancien représentant - mandat expiré le ' . $dateFinMandat;
+        } else {
+
+            $messageRep =
+                'Pas de représentant légal connu';
+        }
         return [
             // ── Identifiants ──────────────────────────────────────
             'numero_immatriculation'    => $raw['numero_immatriculation']   ?? null,
@@ -294,7 +351,10 @@ class CoproprieteApiService
             'siren_representant_legal'  => $sirenRep,
             'siret_syndic'              => $siretRep,
             'siret_representant_legal'  => $siretRep,
-            'representant_legal_connu'  => $repConnu,
+            'representant_legal_connu' => $repConnu,
+
+            'ancien_representant' => $ancienRepresentant,
+
 
             // ── Mandat ────────────────────────────────────────────
             'statut'                    => $mandatEnCours,
