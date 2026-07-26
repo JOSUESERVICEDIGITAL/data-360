@@ -46,7 +46,7 @@ class DataRocketEngineService
             &&
             !$this->cacheCoprosolete($adresseCache)
         ) {
-           return $this->buildResultFromCache($adresseCache, $query, $userId);
+            return $this->buildResultFromCache($adresseCache, $query, $userId);
         }
 
         // ════════════════════════════════════════════════════════
@@ -60,7 +60,7 @@ class DataRocketEngineService
                 'requete' => $query,
                 'statut'  => 'introuvable',
                 'message' => 'Adresse introuvable au géocodage.',
-                'resultat'=> null,
+                'resultat' => null,
             ]);
 
             return [
@@ -72,7 +72,7 @@ class DataRocketEngineService
                 'batiments'         => [],
                 'coproprietes'      => [],
                 'syndics'           => [],
-                'proprietaires_bdnb'=> [],
+                'proprietaires_bdnb' => [],
                 'qpv'               => null,
                 'rnb'               => null,
             ];
@@ -212,14 +212,14 @@ class DataRocketEngineService
                     'nombre_lots_total'        => $coproData['nombre_lots_total']        ?? null,
                     'nombre_lots_habitation'   => $coproData['nombre_lots_habitation']   ?? null,
                     'nombre_batiments'         => $coproData['nombre_batiments']         ?? null,
-                    'nombre_adresses_associees'=> $coproData['nombre_adresses_associees']?? null,
+                    'nombre_adresses_associees' => $coproData['nombre_adresses_associees'] ?? null,
                     'statut'                   => $coproData['statut']                   ?? null,
                     'date_immatriculation'     => $coproData['date_immatriculation']     ?? null,
                     'representant_legal_nom'   => $coproData['representant_legal_nom']   ?? null,
                     'representant_legal_type'  => $coproData['representant_legal_type']  ?? null,
                     'representant_legal_connu' => $coproData['representant_legal_connu'] ?? false,
                     'message_representant'     => $coproData['message_representant']
-                                               ?? 'Pas de représentant légal connu',
+                        ?? 'Pas de représentant légal connu',
                     'raw_data'                 => $coproData['raw_data']                 ?? $coproData,
                 ]
             );
@@ -233,8 +233,8 @@ class DataRocketEngineService
             }
 
             $syndicNom = $coproData['syndic_nom']
-                      ?? $coproData['representant_legal_nom']
-                      ?? null;
+                ?? $coproData['representant_legal_nom']
+                ?? null;
 
             if ($sirenSyndic || $siretSyndic || $syndicNom) {
                 $syndic = $this->createOrUpdateSyndic(
@@ -254,7 +254,7 @@ class DataRocketEngineService
                         'representant_legal_connu' => $coproData['representant_legal_connu'] ?? false,
                         'representant_legal_nom'   => $nomRepresentantFinal,
                         'representant_legal_type'  => $coproData['representant_legal_type']
-                                                   ?? 'syndic professionnel',
+                            ?? 'syndic professionnel',
                         'message_representant'     => null,
                     ]);
                 }
@@ -328,37 +328,28 @@ class DataRocketEngineService
             'batiments'         => $batiments,
             'coproprietes'      => $coproprietes,
             'syndics'           => $syndics,
-            'proprietaires_bdnb'=> $proprietairesBdnb,
+            'proprietaires_bdnb' => $proprietairesBdnb,
             'qpv'               => $qpvChecks,
         ];
     }
 
     private function cacheCoprosolete(Adresse $adresse): bool
     {
-        foreach($adresse->coproprietes as $copro){
-
+        foreach ($adresse->coproprietes as $copro) {
             $raw = $copro->raw_data;
-
-            if(is_string($raw)){
-                $raw=json_decode($raw,true) ?: [];
+            if (is_string($raw)) {
+                $raw = json_decode($raw, true) ?: [];
             }
-
-            $dateImport = $raw['date_immatriculation'] ?? null;
-
-            if(!$dateImport){
-                return true;
-            }
-
-            // exemple : cache de plus de 30 jours
-            if(
-                now()->diffInDays(
-                    \Carbon\Carbon::parse($dateImport)
-                ) > 30
-            ){
+            $dateMaj = $raw['date_derniere_maj'] ?? null;
+            if ($dateMaj) {
+                // Si la dernière mise à jour date de plus de 7 jours, on rafraîchit
+                if (now()->diffInDays(\Carbon\Carbon::parse($dateMaj)) > 7) {
+                    return true;
+                }
+            } else {
                 return true;
             }
         }
-
         return false;
     }
 
@@ -406,7 +397,7 @@ class DataRocketEngineService
             'batiments'         => $adresse->batiments->all(),
             'coproprietes'      => $coproprietes->all(),
             'syndics'           => $syndics->all(),
-            'proprietaires_bdnb'=> [],
+            'proprietaires_bdnb' => [],
             'qpv'               => null,
         ];
     }
@@ -441,11 +432,11 @@ class DataRocketEngineService
             // ── Appel SIG Ville WSA — coordonnées en priorité ──
             // Si pas de coords sur ce candidat, on passe l'adresse texte
             $apiResult = $this->qpvEligibilityService->check(
-                lat        : isset($candidate['latitude'])  ? (float) $candidate['latitude']  : null,
-                lng        : isset($candidate['longitude']) ? (float) $candidate['longitude'] : null,
-                adresse    : $geo['adresse_complete'] ?? '',
-                commune    : $geo['ville']            ?? '',
-                codePostal : $geo['code_postal']      ?? '',
+                lat: isset($candidate['latitude'])  ? (float) $candidate['latitude']  : null,
+                lng: isset($candidate['longitude']) ? (float) $candidate['longitude'] : null,
+                adresse: $geo['adresse_complete'] ?? '',
+                commune: $geo['ville']            ?? '',
+                codePostal: $geo['code_postal']      ?? '',
             );
 
             // Transformer matches API → format attendu par la blade
@@ -484,10 +475,10 @@ class DataRocketEngineService
             ];
         }
 
-        $hasZone = collect($checks)->contains(fn($item) =>
-            ($item['result']['qp_2024'] ?? false)
-            || ($item['result']['qp_2015'] ?? false)
-            || ($item['result']['zfu']    ?? false)
+        $hasZone = collect($checks)->contains(
+            fn($item) => ($item['result']['qp_2024'] ?? false)
+                || ($item['result']['qp_2015'] ?? false)
+                || ($item['result']['zfu']    ?? false)
         );
 
         return [
@@ -530,19 +521,20 @@ class DataRocketEngineService
                     'nom_bdnb'            => $item['nom']             ?? null,
                     'siren'               => $siren                   ?: null,
                     'siret'               => $rne?->siret_siege       ?? null,
-                    'capital_social'      => $rne?->capital_formatted ?? $rne?->capital_social ?? null,
                     'forme_juridique'     => $rne?->forme_juridique   ?? null,
-                    'activite'            => $rne?->activite          ?? null,
-                    'chiffre_affaires'    => null,
-                    'resultat'            => null,
-                    'effectif'            => null,
+                    'capital_social'      => $rne?->capital_social    ?? null, // ✅ corrigé
                     'date_creation'       => optional($rne?->date_creation)->format('Y-m-d'),
+                    'activite'            => $rne?->activite          ?? null,
                     'dirigeant_principal' => data_get($rne?->dirigeants, '0.nom')
-                                         ?? data_get($rne?->dirigeants, '0.prenoms')
-                                         ?? null,
-                    'url_pappers'         => $siren
-                        ? "https://www.pappers.fr/entreprise/{$siren}"
-                        : null,
+                        ?? data_get($rne?->dirigeants, '0.prenoms')
+                        ?? null,
+                    'chiffre_affaires'    => $rne?->chiffre_affaires ?? null,
+                    'resultat'            => $rne?->resultat         ?? null,
+                    'effectif'            => $rne?->effectif         ?? null,
+                    'adresse_complete'    => $rne?->adresse_complete ?? null,
+                    'code_postal'         => $rne?->code_postal      ?? null,
+                    'ville'               => $rne?->ville            ?? null,
+                    'url_pappers'         => $siren ? "https://www.pappers.fr/entreprise/{$siren}" : null,
                     'source'              => $rne ? 'rne_local' : 'bdnb_only',
                     'raw_data'            => $rne?->raw_data,
                 ];
@@ -550,7 +542,6 @@ class DataRocketEngineService
             ->values()
             ->all();
     }
-
     // ─────────────────────────────────────────────────────────────
     // SYNDIC — RNE LOCAL
     // ─────────────────────────────────────────────────────────────
@@ -564,6 +555,10 @@ class DataRocketEngineService
             ? RneEntreprise::where('siren', $sirenSyndic)->first()
             : null;
 
+        if (!$rne && $siretSyndic) {
+            $rne = RneEntreprise::where('siret_siege', $siretSyndic)->first();
+        }
+
         $uniqueKey = $sirenSyndic
             ?: ($siretSyndic ? substr($siretSyndic, 0, 9) : null)
             ?: ($syndicNom   ? substr(md5($syndicNom), 0, 9) : null);
@@ -573,22 +568,20 @@ class DataRocketEngineService
             [
                 'nom'                 => $rne?->denomination      ?? $syndicNom   ?? null,
                 'siret'               => $rne?->siret_siege       ?? $siretSyndic ?? null,
-                'forme_juridique'     => $rne?->forme_juridique   ?? null,
-                'activite'            => $rne?->activite          ?? null,
-                'capital_social'      => $rne?->capital_formatted ?? $rne?->capital_social ?? null,
-                'chiffre_affaires'    => null,
-                'resultat'            => null,
-                'effectif'            => null,
+                'forme_juridique'     => $rne?->forme_juridique   ?? $coproData['forme_juridique'] ?? null,
+                'capital_social'      => $rne?->capital_social    ?? null, // ✅ corrigé
+                'activite'            => $rne?->activite          ?? $coproData['code_ape'] ?? null,
                 'date_creation'       => $rne?->date_creation     ?? null,
                 'dirigeant_principal' => data_get($rne?->dirigeants, '0.nom')
-                                      ?? data_get($rne?->dirigeants, '0.prenoms')
-                                      ?? null,
-                'url_pappers'         => $sirenSyndic
-                    ? "https://www.pappers.fr/entreprise/{$sirenSyndic}"
-                    : null,
-                'adresse_complete'    => $rne?->adresse_complete ?? null,
-                'code_postal'         => $rne?->code_postal      ?? null,
-                'ville'               => $rne?->ville            ?? null,
+                    ?? data_get($rne?->dirigeants, '0.prenoms')
+                    ?? $coproData['dirigeant'] ?? null,
+                'adresse_complete'    => $rne?->adresse_complete ?? $coproData['adresse_representant'] ?? null,
+                'code_postal'         => $rne?->code_postal      ?? $coproData['code_postal_representant'] ?? null,
+                'ville'               => $rne?->ville            ?? $coproData['commune_representant_legal'] ?? null,
+                'chiffre_affaires'    => $rne?->chiffre_affaires ?? $coproData['ca'] ?? null,
+                'resultat'            => $rne?->resultat         ?? null,
+                'effectif'            => $rne?->effectif         ?? null,
+                'url_pappers'         => $sirenSyndic ? "https://www.pappers.fr/entreprise/{$sirenSyndic}" : null,
                 'raw_data'            => [
                     'rnic' => $coproData,
                     'rne'  => $rne?->toArray(),
@@ -678,9 +671,11 @@ class DataRocketEngineService
         if (($batiment['type_batiment']    ?? null) === 'collectif')       $score += 30;
         if (($batiment['nombre_logements'] ?? 0) >= 10)                    $score += 25;
         if (($batiment['nombre_niveaux']   ?? 0) >= 3)                     $score += 15;
-        if (!empty($batiment['annee_construction'])
-            && $batiment['annee_construction'] < 1990)                     $score += 20;
-        if (in_array($batiment['classe_dpe'] ?? null, ['E','F','G'], true)) $score += 10;
+        if (
+            !empty($batiment['annee_construction'])
+            && $batiment['annee_construction'] < 1990
+        )                     $score += 20;
+        if (in_array($batiment['classe_dpe'] ?? null, ['E', 'F', 'G'], true)) $score += 10;
         return min($score, 100);
     }
 }

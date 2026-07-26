@@ -92,10 +92,8 @@
             }
             if ((bool) dr_value($copro, ['representant_legal_connu'], false)) {
                 return true;
-            } // colonne DB
-            if (drMandatExpire($copro)) {
-                return true;
             }
+            // plus de retour true pour mandat expiré
             return false;
         }
 
@@ -142,8 +140,8 @@
         $repConnuDb = (bool) dr_value($coproPrincipale, ['representant_legal_connu'], false);
         $representantConnu =
             $adresseEnregistree &&
-            (!empty($representantNom) || !empty($sirenSyndic) || !empty($siretSyndic) || $mandatExpire || $repConnuDb);
-
+            !$mandatExpire && // si mandat expiré, on ne considère pas comme représentant
+            (!empty($representantNom) || !empty($sirenSyndic) || !empty($siretSyndic) || $repConnuDb);
         // Si pas trouvé → scanner toutes les copros
         if (!$representantConnu && $copros->isNotEmpty()) {
             $anyRep = $copros->filter(fn($c) => drRepConnu($c))->first();
@@ -957,7 +955,8 @@
                             @php
                                 $cand = $check['candidate'] ?? [];
                                 $res = $check['result'] ?? [];
-                                $hasZone = ($res['qp_2024'] ?? false) || ($res['qp_2015'] ?? false) || ($res['zfu'] ?? false);
+                                $hasZone =
+                                    ($res['qp_2024'] ?? false) || ($res['qp_2015'] ?? false) || ($res['zfu'] ?? false);
                             @endphp
                             <div class="dr-record">
                                 <div class="dr-record-header">
@@ -1022,13 +1021,7 @@
                                 <div class="dr-status danger"><i class="fa-solid fa-circle-exclamation"></i> Pas de
                                     représentant légal</div>
                             @endif
-                            {{-- Badge mandat expiré --}}
-                            @if ($mandatExpire)
-                                <div class="badge-mandat-expire">
-                                    <i class="fa-solid fa-clock"></i> Mandat expiré le {{ $dateFinMandat }} —
-                                    renouvellement en attente
-                                </div>
-                            @endif
+
                             {{-- Badge multi-immatriculation --}}
                             @if ($hasMultipleImmat)
                                 <div class="badge-multi-immat">
@@ -1050,11 +1043,7 @@
                                 <div>
                                     <div style="font-weight:800;color:#c2410c;font-size:.9rem;margin-bottom:4px;">Mandat
                                         expiré le {{ $dateFinMandat }}</div>
-                                    <div style="font-size:.82rem;color:#92400e;line-height:1.5;">
-                                        Le dernier mandat enregistré au RNIC a expiré. Le syndic reste le
-                                        <strong>gestionnaire de fait</strong> — un renouvellement est probablement en cours
-                                        ou à venir.
-                                    </div>
+
                                 </div>
                             </div>
                         @endif
@@ -1096,12 +1085,8 @@
                                 <div class="dr-field-label">Nom représentant / syndic <i class="fa-regular fa-copy"></i>
                                 </div>
                                 <div class="dr-field-value">
-                                    {{ $representantNom ?: ($mandatExpire ? '— (gestionnaire de fait)' : '-') }}
-                                    @if ($mandatExpire && !empty($representantNom))
-                                        <span
-                                            style="display:block;font-size:.7rem;color:var(--dr-warning);margin-top:4px;font-weight:600;">⏱
-                                            Mandat expiré — renouvellement en attente</span>
-                                    @endif
+                                    {{ $representantNom ?? '-' }}
+
                                 </div>
                             </div>
                             <div class="dr-field copyable"
@@ -1122,7 +1107,8 @@
                                 data-copy="{{ dr_value($coproPrincipale, ['numero_immatriculation']) }}">
                                 <div class="dr-field-label">Immatriculation <i class="fa-regular fa-copy"></i></div>
                                 <div class="dr-field-value">
-                                    <code>{{ dr_value($coproPrincipale, ['numero_immatriculation']) }}</code></div>
+                                    <code>{{ dr_value($coproPrincipale, ['numero_immatriculation']) }}</code>
+                                </div>
                             </div>
                             <div class="dr-field copyable"
                                 data-copy="{{ dr_value($coproPrincipale, ['nom_copropriete', 'nom_usage_copropriete']) }}">
@@ -1162,7 +1148,8 @@
                                     style="display:flex;align-items:center;gap:14px;background:{{ $cHasRep ? 'var(--dr-success-bg)' : 'var(--dr-soft)' }};border:1px solid {{ $cHasRep ? '#86efac' : 'var(--dr-border)' }};border-radius:14px;padding:12px 16px;margin-bottom:8px;">
                                     <div
                                         style="font-size:1.2rem;color:{{ $cHasRep ? 'var(--dr-success)' : 'var(--dr-muted)' }}">
-                                        <i class="fa-solid {{ $cHasRep ? 'fa-circle-check' : 'fa-circle-xmark' }}"></i></div>
+                                        <i class="fa-solid {{ $cHasRep ? 'fa-circle-check' : 'fa-circle-xmark' }}"></i>
+                                    </div>
                                     <div style="flex:1;min-width:0;">
                                         <div style="font-weight:800;font-size:.85rem;">
                                             {{ dr_value($c, ['nom_copropriete', 'nom_usage_copropriete'], 'Copropriété ' . ($idx + 1)) }}
@@ -1212,7 +1199,8 @@
                         <div class="dr-field copyable"
                             data-copy="{{ ($adresse->code_postal ?? '') . ' ' . ($adresse->ville ?? '') }}">
                             <div class="dr-field-label">Code postal / Ville <i class="fa-regular fa-copy"></i></div>
-                            <div class="dr-field-value">{{ $adresse->code_postal ?? '' }} {{ $adresse->ville ?? '' }}</div>
+                            <div class="dr-field-value">{{ $adresse->code_postal ?? '' }} {{ $adresse->ville ?? '' }}
+                            </div>
                         </div>
                         <div class="dr-field copyable" data-copy="{{ $adresse->code_insee ?? '-' }}">
                             <div class="dr-field-label">Code INSEE <i class="fa-regular fa-copy"></i></div>
@@ -1351,7 +1339,8 @@
                                     data-copy="{{ dr_value($batiment, ['identifiant_bdnb']) }}">
                                     <div class="dr-field-label">Identifiant BDNB <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">
-                                        <code>{{ dr_value($batiment, ['identifiant_bdnb']) }}</code></div>
+                                        <code>{{ dr_value($batiment, ['identifiant_bdnb']) }}</code>
+                                    </div>
                                 </div>
                                 <div class="dr-field">
                                     <div class="dr-field-label">Type bâtiment</div>
@@ -1446,29 +1435,45 @@
                                     <div class="dr-field-label">SIRET <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value"><code>{{ $proprietaire['siret'] ?? '-' }}</code></div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Capital social</div>
+                                <div class="dr-field copyable" data-copy="{{ $proprietaire['capital_social'] ?? '-' }}">
+                                    <div class="dr-field-label">Capital social <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ $proprietaire['capital_social'] ?? '-' }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Forme juridique</div>
+                                <div class="dr-field copyable"
+                                    data-copy="{{ $proprietaire['forme_juridique'] ?? '-' }}">
+                                    <div class="dr-field-label">Forme juridique <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ $proprietaire['forme_juridique'] ?? '-' }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Dirigeant</div>
+                                <div class="dr-field copyable"
+                                    data-copy="{{ $proprietaire['dirigeant_principal'] ?? '-' }}">
+                                    <div class="dr-field-label">Dirigeant <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ $proprietaire['dirigeant_principal'] ?? '-' }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Activité</div>
+                                <div class="dr-field copyable" data-copy="{{ $proprietaire['activite'] ?? '-' }}">
+                                    <div class="dr-field-label">Activité <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ $proprietaire['activite'] ?? '-' }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Chiffre d'affaires</div>
+                                <div class="dr-field copyable"
+                                    data-copy="{{ $proprietaire['chiffre_affaires'] ?? '-' }}">
+                                    <div class="dr-field-label">Chiffre d'affaires <i class="fa-regular fa-copy"></i>
+                                    </div>
                                     <div class="dr-field-value">{{ $proprietaire['chiffre_affaires'] ?? '-' }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Effectif</div>
+                                <div class="dr-field copyable" data-copy="{{ $proprietaire['effectif'] ?? '-' }}">
+                                    <div class="dr-field-label">Effectif <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ $proprietaire['effectif'] ?? '-' }}</div>
+                                </div>
+                                {{-- Adresse --}}
+                                <div class="dr-field copyable"
+                                    data-copy="{{ $proprietaire['adresse_complete'] ?? '-' }}">
+                                    <div class="dr-field-label">Adresse <i class="fa-regular fa-copy"></i></div>
+                                    <div class="dr-field-value">
+                                        {{ $proprietaire['adresse_complete'] ?? '-' }}
+                                        @if (!empty($proprietaire['code_postal']) || !empty($proprietaire['ville']))
+                                            ({{ $proprietaire['code_postal'] ?? '' }}
+                                            {{ $proprietaire['ville'] ?? '' }})
+                                        @endif
+                                    </div>
                                 </div>
                                 <div class="dr-field">
                                     <div class="dr-field-label">Source</div>
@@ -1482,7 +1487,8 @@
                                                     class="fa-solid fa-building"></i> BDNB</span>
                                         @else<span class="dr-status warning"
                                                 style="display:inline-flex;font-size:11px;"><i
-                                                    class="fa-solid fa-circle-info"></i> {{ $src ?: 'Non enrichi' }}</span>
+                                                    class="fa-solid fa-circle-info"></i>
+                                                {{ $src ?: 'Non enrichi' }}</span>
                                         @endif
                                     </div>
                                 </div>
@@ -1497,7 +1503,6 @@
                         <div class="dr-empty">Aucun propriétaire BDNB trouvé.</div>
                     @endforelse
                 </div>
-
                 {{-- ═══ SECTION 8 — COPROPRIÉTÉS ══════════════════════════════════════ --}}
                 <div class="dr-panel" id="panel-coproprietes">
                     <div class="dr-panel-header">
@@ -1549,11 +1554,14 @@
                                     data-copy="{{ dr_value($copro, ['numero_immatriculation']) }}">
                                     <div class="dr-field-label">Immatriculation <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">
-                                        <code>{{ dr_value($copro, ['numero_immatriculation']) }}</code></div>
+                                        <code>{{ dr_value($copro, ['numero_immatriculation']) }}</code>
+                                    </div>
                                 </div>
-                                <div class="dr-field copyable" data-copy="{{ dr_value($copro, ['siren_copropriete']) }}">
+                                <div class="dr-field copyable"
+                                    data-copy="{{ dr_value($copro, ['siren_copropriete']) }}">
                                     <div class="dr-field-label">SIREN copropriété <i class="fa-regular fa-copy"></i></div>
-                                    <div class="dr-field-value"><code>{{ dr_value($copro, ['siren_copropriete']) }}</code>
+                                    <div class="dr-field-value">
+                                        <code>{{ dr_value($copro, ['siren_copropriete']) }}</code>
                                     </div>
                                 </div>
                                 <div class="dr-field">
@@ -1627,26 +1635,47 @@
                                     <div class="dr-field-label">SIRET <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value"><code>{{ dr_value($syndic, ['siret']) }}</code></div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Forme juridique</div>
+                                <div class="dr-field copyable" data-copy="{{ dr_value($syndic, ['forme_juridique']) }}">
+                                    <div class="dr-field-label">Forme juridique <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ dr_value($syndic, ['forme_juridique']) }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Capital social</div>
+                                <div class="dr-field copyable" data-copy="{{ dr_value($syndic, ['capital_social']) }}">
+                                    <div class="dr-field-label">Capital social <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ dr_value($syndic, ['capital_social']) }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">CA / Résultat</div>
-                                    <div class="dr-field-value">{{ dr_value($syndic, ['chiffre_affaires']) }} /
-                                        {{ dr_value($syndic, ['resultat']) }}</div>
+                                <div class="dr-field copyable"
+                                    data-copy="{{ dr_value($syndic, ['chiffre_affaires']) }}">
+                                    <div class="dr-field-label">CA <i class="fa-regular fa-copy"></i></div>
+                                    <div class="dr-field-value">{{ dr_value($syndic, ['chiffre_affaires']) }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Effectif</div>
+                                <div class="dr-field copyable" data-copy="{{ dr_value($syndic, ['resultat']) }}">
+                                    <div class="dr-field-label">Résultat <i class="fa-regular fa-copy"></i></div>
+                                    <div class="dr-field-value">{{ dr_value($syndic, ['resultat']) }}</div>
+                                </div>
+                                <div class="dr-field copyable" data-copy="{{ dr_value($syndic, ['effectif']) }}">
+                                    <div class="dr-field-label">Effectif <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ dr_value($syndic, ['effectif']) }}</div>
                                 </div>
-                                <div class="dr-field">
-                                    <div class="dr-field-label">Dirigeant</div>
+                                <div class="dr-field copyable"
+                                    data-copy="{{ dr_value($syndic, ['dirigeant_principal']) }}">
+                                    <div class="dr-field-label">Dirigeant <i class="fa-regular fa-copy"></i></div>
                                     <div class="dr-field-value">{{ dr_value($syndic, ['dirigeant_principal']) }}</div>
+                                </div>
+                                {{-- Adresse du syndic --}}
+                                <div class="dr-field copyable"
+                                    data-copy="{{ dr_value($syndic, ['adresse_complete']) }}">
+                                    <div class="dr-field-label">Adresse <i class="fa-regular fa-copy"></i></div>
+                                    <div class="dr-field-value">
+                                        {{ dr_value($syndic, ['adresse_complete']) }}
+                                        @if (dr_value($syndic, ['code_postal']) || dr_value($syndic, ['ville']))
+                                            ({{ dr_value($syndic, ['code_postal']) }}
+                                            {{ dr_value($syndic, ['ville']) }})
+                                        @endif
+                                    </div>
+                                </div>
+                                <div class="dr-field copyable" data-copy="{{ dr_value($syndic, ['date_creation']) }}">
+                                    <div class="dr-field-label">Date de création <i class="fa-regular fa-copy"></i></div>
+                                    <div class="dr-field-value">{{ dr_value($syndic, ['date_creation']) }}</div>
                                 </div>
                             </div>
                             @if (dr_value($syndic, ['url_pappers'], null) !== '-')

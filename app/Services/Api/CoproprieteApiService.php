@@ -45,29 +45,11 @@ class CoproprieteApiService
         }
 
         // ── 3. Vérification live si ancien mandat détecté ──
-        // Si la donnée locale contient uniquement un ancien représentant,
-        // on vérifie auprès du RNIC public pour récupérer une éventuelle mise à jour.
-
-        $hasExpiredMandat = collect($results)->contains(function ($r) {
-
-            return ($r['ancien_representant'] ?? false) === true;
-        });
-
+        $hasExpiredMandat = collect($results)->contains(fn($r) => ($r['ancien_representant'] ?? false) === true);
 
         if ($hasExpiredMandat) {
-
-            // Interroger l'API officielle
-            $liveResults = $this->searchRnicApi(
-                $adresse,
-                $codePostalFinal,
-                $ville
-            );
-
-
+            $liveResults = $this->searchRnicApi($adresse, $codePostalFinal, $ville);
             if (!empty($liveResults)) {
-
-                // Le RNIC est la source de vérité : on lui fait toujours confiance,
-                // même s'il indique l'absence de représentant légal.
                 return $liveResults;
             }
         }
@@ -108,12 +90,31 @@ class CoproprieteApiService
 
         foreach ($candidates as $candidate) {
             $copro = $candidate['copro'];
+
+            // ── Récupérer les autres adresses pour la même immatriculation ──
             $sameImmatriculation = $copro->numero_immatriculation
                 ? RnicCopropriete::where('numero_immatriculation', $copro->numero_immatriculation)
                 ->get(['adresse_complete', 'code_postal', 'ville', 'raw_data'])
                 : collect();
 
-            $arr = $copro->toArray();
+            // ── Normaliser les données (extrait le représentant depuis raw_data) ──
+            $normalized = $this->normalize($copro->raw_data ?? []);
+
+            // ── Fusionner avec les attributs du modèle ──
+            $arr = array_merge($copro->toArray(), $normalized);
+
+            // ── Forcer les champs représentant depuis normalize (priorité) ──
+            $arr['representant_legal_nom']   = $normalized['representant_legal_nom'] ?? null;
+            $arr['syndic_nom']               = $normalized['syndic_nom'] ?? null;
+            $arr['siren_syndic']             = $normalized['siren_syndic'] ?? null;
+            $arr['siret_syndic']             = $normalized['siret_syndic'] ?? null;
+            $arr['statut']                   = $normalized['statut'] ?? null;
+            $arr['representant_legal_connu'] = $normalized['representant_legal_connu'] ?? false;
+            $arr['message_representant']     = $normalized['message_representant'] ?? null;
+            $arr['ancien_representant']      = $normalized['ancien_representant'] ?? false;
+            $arr['date_fin_dernier_mandat']  = $normalized['date_fin_dernier_mandat'] ?? null;
+
+            // ── Champs de score et d'adresse ──
             $arr['score_match']              = $candidate['score'];
             $arr['adresse_rnic_match']       = $candidate['matched_address'];
             $arr['adresse_match_exact']      = $candidate['is_exact_address'];
@@ -175,173 +176,144 @@ class CoproprieteApiService
         return $results;
     }
 
+    /**
+     * Mappe les données de l'API publique (format du site registre-coproprietes)
+     * en utilisant les clés racines (pas de sous-tableau 'representant_legal').
+     */
     private function mapRnicApiToLocalFormat(array $item, string $adresseOrigine): array
     {
-        $representant = $item['representant_legal'] ?? [];
+        $nomRep = $item['raison_sociale_representant_legal']
+            ?? $item['syndic_nom']
+            ?? null;
+        $sirenRep = $item['siren_representant_legal']
+            ?? $item['siren_syndic']
+            ?? null;
+        $siretRep = $item['siret_representant_legal']
+            ?? $item['siret_syndic']
+            ?? null;
+        $statut = $item['mandat_en_cours']
+            ?? $item['statut']
+            ?? null;
+
         return [
-            'numero_immatriculation'    => $item['id'] ?? null,
-            'nom_copropriete'           => $item['nom'] ?? null,
+            'numero_immatriculation'    => $item['numero_immatriculation'] ?? null,
+            'nom_copropriete'           => $item['nom_usage_copropriete'] ?? $item['nom_copropriete'] ?? null,
             'siren_copropriete'         => null,
-            'adresse_complete'          => $item['adresse'] ?? null,
-            'code_postal'               => $item['code_postal'] ?? null,
-            'ville'                     => $item['ville'] ?? null,
-            'nombre_lots_total'         => $item['nb_lots_total'] ?? null,
-            'nombre_lots_habitation'    => $item['nb_lots_habitation'] ?? null,
+            'adresse_complete'          => $item['adresse_reference'] ?? $item['adresse_complete'] ?? null,
+            'code_postal'               => $item['code_postal_adresse'] ?? $item['code_postal'] ?? null,
+            'ville'                     => $item['commune_adresse'] ?? $item['ville'] ?? null,
+            'nombre_lots_total'         => $item['nombre_total_lots'] ?? null,
+            'nombre_lots_habitation'    => $item['nombre_lots_habitation'] ?? null,
             'nombre_batiments'          => null,
             'nombre_adresses_associees' => null,
-            'statut'                    => null,
+            'statut'                    => $statut,
             'date_immatriculation'      => $item['date_immatriculation'] ?? null,
-            'representant_legal_nom'    => ($representant['present'] ?? false) ? ($representant['nom'] ?? null) : null,
-            'representant_legal_type'   => $representant['type'] ?? null,
-            'syndic_nom'                => ($representant['present'] ?? false) ? ($representant['nom'] ?? null) : null,
-            'siren_syndic'              => null,
-            'siret_syndic'              => $representant['siret'] ?? null,
+            'representant_legal_nom'    => $nomRep,
+            'representant_legal_type'   => $item['type_syndic'] ?? null,
+            'syndic_nom'                => $nomRep,
+            'siren_syndic'              => $sirenRep,
+            'siret_syndic'              => $siretRep,
             'procedures_en_cours'       => $item['procedures_en_cours'] ?? [],
             'score_match'               => 80,
-            'adresse_rnic_match'        => $item['adresse'] ?? null,
+            'adresse_rnic_match'        => $item['adresse_reference'] ?? null,
             'adresse_match_exact'       => false,
             'adresses_associees_liste'  => [],
             '_source'                   => 'rnic_api_public',
             '_lien_officiel'            => $item['lien_officiel'] ?? null,
             'raw_data'                  => $item,
+            // Ajout des champs pour la compatibilité
+            'ancien_representant'       => false, // l'API publique renvoie toujours l'état actuel
+            'date_fin_dernier_mandat'   => $item['date_fin_dernier_mandat'] ?? null,
+            'representant_legal_connu'  => !empty($nomRep) || !empty($sirenRep) || !empty($siretRep),
+            'message_representant'      => !empty($nomRep) ? null : 'Pas de représentant légal connu',
         ];
     }
 
     // ════════════════════════════════════════════════════════════════
     // NORMALIZE — VERSION CORRIGÉE
-    // Cherche les vrais champs RNIC 2024 dans raw_data
-    // si les colonnes DB sont vides
     // ════════════════════════════════════════════════════════════════
     public function normalize(array $raw): array
     {
-        // ── Représentant légal — vrais noms de champs RNIC 2024 ──
+        // ── Représentant légal ──
         $repNom   = $raw['raison_sociale_representant_legal']
             ?? $raw['identification_representant_legal']
-            ?? $raw['syndic_nom']        // fallback ancien format
+            ?? $raw['syndic_nom']
             ?? null;
 
         $sirenRep = $raw['siren_representant_legal']
-            ?? $raw['siren_syndic']      // fallback ancien format
+            ?? $raw['siren_syndic']
             ?? null;
 
         $siretRep = $raw['siret_representant_legal']
-            ?? $raw['siret_syndic']      // fallback ancien format
+            ?? $raw['siret_syndic']
             ?? null;
 
         $typeSyndic = $raw['type_syndic'] ?? null;
 
-        // ✅ APRÈS — cherche dans raw_data aussi
+        // ── Mandat ──
         $rawJson = $raw['raw_data'] ?? [];
         if (is_string($rawJson)) $rawJson = json_decode($rawJson, true) ?: [];
 
         $mandatEnCours = $raw['mandat_en_cours']
             ?? $rawJson['mandat_en_cours']
-            ?? $raw['statut']              // colonne DB
+            ?? $raw['statut']
             ?? null;
 
         $dateFinMandat = $raw['date_fin_dernier_mandat']
             ?? $rawJson['date_fin_dernier_mandat']
             ?? null;
 
-        // Nettoyer les valeurs vides
+        // Nettoyer
         $repNom   = !empty(trim((string) $repNom))   ? $repNom   : null;
         $sirenRep = !empty(trim((string) $sirenRep)) ? $sirenRep : null;
         $siretRep = !empty(trim((string) $siretRep)) ? $siretRep : null;
 
-        // ════════════════════════════════════════════════════════
-        // RÈGLE MÉTIER : mandat expiré = gestionnaire de fait
-        //
-        // Si le mandat est "Pas de mandat en cours" MAIS qu'il y a
-        // une date de fin → il y avait un syndic qui peut renouveler.
-        // On considère AVEC représentant = nos clients voient l'info.
-        // ════════════════════════════════════════════════════════
-        /*
-|--------------------------------------------------------------------------
-| Gestion représentant conforme annuaire officiel
-|--------------------------------------------------------------------------
-*/
+        // ── Règles métier ──
+        $hasRepresentative = !empty($repNom) || !empty($sirenRep) || !empty($siretRep);
 
-        // Représentant déclaré
-        $hasRepresentative =
-            !empty($repNom)
-            || !empty($sirenRep)
-            || !empty($siretRep);
-
-
-        // Date de fin de mandat connue
         $mandatExpire = false;
-
         if (!empty($dateFinMandat)) {
-
             try {
-
                 $dateFin = \Carbon\Carbon::parse($dateFinMandat);
-
                 $mandatExpire = $dateFin->isPast();
             } catch (\Exception $e) {
-
                 $mandatExpire = false;
             }
         }
 
-
-        /*
-|--------------------------------------------------------------------------
-| Règle finale
-|--------------------------------------------------------------------------
-*/
-
-        // Représentant actif uniquement
-        $repConnu = !empty($repNom)
-            || !empty($sirenRep)
-            || !empty($siretRep);
-
-
-        // Ancien représentant uniquement
+        $repConnu = !empty($repNom) || !empty($sirenRep) || !empty($siretRep);
         $ancienRepresentant = $hasRepresentative && $mandatExpire;
 
-
         if (!$repConnu && $mandatExpire) {
-
-            $messageRep = 'Ancien représentant connu - mandat expiré le '.$dateFinMandat;
-
+            $messageRep = 'Ancien représentant connu - mandat expiré le ' . $dateFinMandat;
         } elseif (!$repConnu) {
-
             $messageRep = 'Pas de représentant légal connu';
-
         } else {
-
             $messageRep = null;
-
         }
+
         return [
-            // ── Identifiants ──────────────────────────────────────
             'numero_immatriculation'    => $raw['numero_immatriculation']   ?? null,
             'nom_copropriete'           => $raw['nom_usage_copropriete']
                 ?? $raw['nom_copropriete']          ?? null,
             'siren_copropriete'         => $raw['siren_copropriete']        ?? null,
 
-            // ── Représentant ──────────────────────────────────────
             'representant_legal_nom'    => $repNom,
-            'syndic_nom'                => $repNom,      // alias blade
+            'syndic_nom'                => $repNom,
             'representant_legal_type'   => $typeSyndic,
             'type_syndic'               => $typeSyndic,
             'siren_syndic'              => $sirenRep,
             'siren_representant_legal'  => $sirenRep,
             'siret_syndic'              => $siretRep,
             'siret_representant_legal'  => $siretRep,
-            'representant_legal_connu' => $repConnu,
+            'representant_legal_connu'  => $repConnu,
+            'ancien_representant'       => $ancienRepresentant,
 
-            'ancien_representant' => $ancienRepresentant,
-
-
-            // ── Mandat ────────────────────────────────────────────
             'statut'                    => $mandatEnCours,
             'mandat_en_cours'           => $mandatEnCours,
-            'mandat_expire'             => $mandatExpire,   // ← NOUVEAU
+            'mandat_expire'             => $mandatExpire,
             'date_fin_dernier_mandat'   => $dateFinMandat,
 
-            // ── Localisation ──────────────────────────────────────
             'adresse_complete'          => $raw['adresse_reference']        ?? null,
             'code_postal'               => $raw['code_postal_adresse']      ?? null,
             'code_postal_adresse'       => $raw['code_postal_adresse']      ?? null,
@@ -350,19 +322,15 @@ class CoproprieteApiService
             'commune_adresse'           => $raw['commune_adresse']          ?? null,
             'nom_officiel_commune'      => $raw['nom_officiel_commune']     ?? null,
 
-            // ── Lots ──────────────────────────────────────────────
             'nombre_lots_total'         => $raw['nombre_total_lots']        ?? null,
             'nombre_lots_habitation'    => $raw['nombre_lots_habitation']   ?? null,
             'date_immatriculation'      => $raw['date_immatriculation']     ?? null,
 
-            // ── Score ─────────────────────────────────────────────
             'score_match'               => $raw['score_match']
                 ?? $raw['score']                    ?? null,
 
-            // ── Message représentant ──────────────────────────────
             'message_representant'      => $messageRep,
 
-            // ── Raw data original ─────────────────────────────────
             'raw_data'                  => $raw,
         ];
     }

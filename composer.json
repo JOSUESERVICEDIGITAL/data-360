@@ -16,6 +16,7 @@
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
         "league/csv": "^9.28",
+        "league/flysystem-ftp": "^3.31",
         "league/flysystem-sftp-v3": "^3.33",
         "openspout/openspout": "^4.28",
         "phpoffice/phpspreadsheet": "^5.7",

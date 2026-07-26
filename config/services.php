@@ -93,6 +93,10 @@ return [
         'username' => env('SIGVILLE_USERNAME', ''),
         'password' => env('SIGVILLE_PASSWORD', ''),
     ],
+    'rne' => [
+    'base_url' => env('RNE_API_URL', 'https://api.inpi.fr/v1'),
+    'api_key'  => env('RNE_API_KEY'),
+],
 
 
 ];
