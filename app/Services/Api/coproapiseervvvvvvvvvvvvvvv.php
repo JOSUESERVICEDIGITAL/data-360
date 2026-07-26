@@ -8,6 +8,13 @@ use Illuminate\Support\Str;
 
 class CoproprieteApiService
 {
+    /**
+     * Valeurs considérées comme "vides" / placeholder dans le CSV RNIC.
+     * Le CSV utilise parfois des libellés textuels au lieu de NULL pour
+     * indiquer l'absence de donnée — il faut les traiter comme vides,
+     * sinon ils sont interprétés à tort comme un vrai nom de représentant
+     * ou un vrai identifiant.
+     */
     private const PLACEHOLDER_VALUES = [
         'non connu',
         'non connue',
@@ -28,20 +35,31 @@ class CoproprieteApiService
 
     public function __construct(
         protected ApiLoggerService   $logger,
-        protected CoproprieteService $coproprieteService
+        protected CoproprieteService $coproprieteService  // ← nouveau
     ) {}
 
     public function searchByAddress(string $adresse, ?string $codePostal = null, ?string $ville = null): array
     {
+        // Extraire le CP depuis l'adresse brute si BAN a renvoyé un mauvais CP
         $cpDepuisAdresse = $this->extractPostalCode($adresse);
+
+        // Priorité : CP extrait de l'adresse > CP du géocodage
         $codePostalFinal = $cpDepuisAdresse ?? $codePostal;
+
+        // ── 1. Recherche locale
         $results = $this->searchLocal($adresse, $codePostalFinal, $ville);
+
+        // ── 2. Fallback API RNIC publique si rien trouvé
         if (empty($results)) {
             $results = $this->searchRnicApi($adresse, $codePostalFinal, $ville);
         }
+
         return $results;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // RECHERCHE LOCALE — inchangée
+    // ═══════════════════════════════════════════════════════════════
     private function searchLocal(string $adresse, ?string $codePostal, ?string $ville): array
     {
         $searched       = $this->normalizeText($adresse);
@@ -50,6 +68,7 @@ class CoproprieteApiService
         $searchedWords  = $this->extractImportantWords($searched);
 
         $query = RnicCopropriete::query()->whereNotNull('adresse_complete');
+
         if ($searchedPostal) {
             $query->where('code_postal', $searchedPostal);
         }
@@ -74,10 +93,12 @@ class CoproprieteApiService
         $results = [];
 
         foreach ($candidates as $candidate) {
+            /** @var RnicCopropriete $copro */
             $copro = $candidate['copro'];
+
             $sameImmatriculation = $copro->numero_immatriculation
                 ? RnicCopropriete::where('numero_immatriculation', $copro->numero_immatriculation)
-                ->get(['adresse_complete', 'code_postal', 'ville', 'raw_data'])
+                    ->get(['adresse_complete', 'code_postal', 'ville', 'raw_data'])
                 : collect();
 
             $arr = $copro->toArray();
@@ -85,9 +106,11 @@ class CoproprieteApiService
             $arr['adresse_rnic_match']       = $candidate['matched_address'];
             $arr['adresse_match_exact']      = $candidate['is_exact_address'];
             $arr['adresses_associees_liste'] = $this->buildAssociatedAddresses($sameImmatriculation, $copro);
+
             if (empty($arr['nombre_adresses_associees'])) {
                 $arr['nombre_adresses_associees'] = count($arr['adresses_associees_liste']);
             }
+
             $arr['_source'] = 'local';
             $results[] = $arr;
         }
@@ -106,9 +129,13 @@ class CoproprieteApiService
         return $results;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // FALLBACK API RNIC PUBLIQUE — inchangé
+    // ═══════════════════════════════════════════════════════════════
     private function searchRnicApi(string $adresse, ?string $codePostal, ?string $ville): array
     {
         $queryAdresse = trim($adresse . ($codePostal ? " $codePostal" : '') . ($ville ? " $ville" : ''));
+
         $apiResult = $this->coproprieteService->rechercherParAdresse($queryAdresse);
 
         if (!$apiResult['success'] || empty($apiResult['data'])) {
@@ -127,7 +154,8 @@ class CoproprieteApiService
 
         $results = collect($apiResult['data'])
             ->map(fn($item) => $this->mapRnicApiToLocalFormat($item, $adresse))
-            ->values()->all();
+            ->values()
+            ->all();
 
         $this->logger->log(
             'RNIC_API',
@@ -142,29 +170,51 @@ class CoproprieteApiService
         return $results;
     }
 
+    /**
+     * Convertit la réponse normalisée du CoproprieteService
+     * vers le format attendu par normalize() et le moteur.
+     */
     private function mapRnicApiToLocalFormat(array $item, string $adresseOrigine): array
     {
         $representant = $item['representant_legal'] ?? [];
+
         return [
+            // Identifiants
             'numero_immatriculation'    => $item['id'] ?? null,
             'nom_copropriete'           => $item['nom'] ?? null,
             'siren_copropriete'         => null,
+
+            // Adresse
             'adresse_complete'          => $item['adresse'] ?? null,
             'code_postal'               => $item['code_postal'] ?? null,
             'ville'                     => $item['ville'] ?? null,
+
+            // Lots
             'nombre_lots_total'         => $item['nb_lots_total'] ?? null,
             'nombre_lots_habitation'    => $item['nb_lots_habitation'] ?? null,
             'nombre_batiments'          => null,
             'nombre_adresses_associees' => null,
+
+            // Statut
             'statut'                    => null,
             'date_immatriculation'      => $item['date_immatriculation'] ?? null,
-            'representant_legal_nom'    => ($representant['present'] ?? false) ? ($representant['nom'] ?? null) : null,
+
+            // Représentant légal
+            'representant_legal_nom'    => ($representant['present'] ?? false)
+                ? ($representant['nom'] ?? null)
+                : null,
             'representant_legal_type'   => $representant['type'] ?? null,
-            'syndic_nom'                => ($representant['present'] ?? false) ? ($representant['nom'] ?? null) : null,
+            'syndic_nom'                => ($representant['present'] ?? false)
+                ? ($representant['nom'] ?? null)
+                : null,
             'siren_syndic'              => null,
             'siret_syndic'              => $representant['siret'] ?? null,
+
+            // Procédures
             'procedures_en_cours'       => $item['procedures_en_cours'] ?? [],
-            'score_match'               => 80,
+
+            // Meta
+            'score_match'               => 80, // score par défaut API publique
             'adresse_rnic_match'        => $item['adresse'] ?? null,
             'adresse_match_exact'       => false,
             'adresses_associees_liste'  => [],
@@ -174,161 +224,138 @@ class CoproprieteApiService
         ];
     }
 
-    // ════════════════════════════════════════════════════════════════
-    // NORMALIZE — VERSION CORRIGÉE
-    // Cherche les vrais champs RNIC 2024 dans raw_data
-    // si les colonnes DB sont vides
-    // ════════════════════════════════════════════════════════════════
-    public function normalize(array $raw): array
+    // ═══════════════════════════════════════════════════════════════
+    // NORMALIZE — FIX PRINCIPAL : filtre anti-placeholder
+    // ═══════════════════════════════════════════════════════════════
+    public function normalize(array $item): array
     {
-        // ── Représentant légal — vrais noms de champs RNIC 2024 ──
-        $repNom   = $raw['raison_sociale_representant_legal']
-            ?? $raw['identification_representant_legal']
-            ?? $raw['syndic_nom']        // fallback ancien format
-            ?? null;
+        $representantNom = $this->cleanRepresentativeName(
+            $item['representant_legal_nom']
+                ?? $item['syndic_nom']
+                ?? $item['representant']
+                ?? null
+        );
 
-        $sirenRep = $raw['siren_representant_legal']
-            ?? $raw['siren_syndic']      // fallback ancien format
-            ?? null;
+        $sirenSyndic = $this->cleanIdentifier($item['siren_syndic'] ?? null);
+        $siretSyndic = $this->cleanIdentifier($item['siret_syndic'] ?? null);
 
-        $siretRep = $raw['siret_representant_legal']
-            ?? $raw['siret_syndic']      // fallback ancien format
-            ?? null;
+        $isSharedHiddenIdentity = $this->isHiddenOpenDataIdentity($representantNom);
+        $isPlaceholderNom       = $this->isPlaceholderValue($representantNom);
 
-        $typeSyndic = $raw['type_syndic'] ?? null;
+        // Un nom "non connu", "inconnu", etc. ne compte PAS comme un
+        // représentant connu — c'est l'absence de donnée déguisée en texte
+        // par certaines versions du CSV RNIC.
+        $representantConnu = (
+            (!empty($representantNom) && !$isSharedHiddenIdentity && !$isPlaceholderNom)
+            || !empty($sirenSyndic)
+            || !empty($siretSyndic)
+        );
 
-        // ✅ APRÈS — cherche dans raw_data aussi
-        $rawJson = $raw['raw_data'] ?? [];
-        if (is_string($rawJson)) $rawJson = json_decode($rawJson, true) ?: [];
+        // Si le nom est un placeholder, on le neutralise complètement
+        // pour ne jamais l'afficher tel quel dans l'UI (ex: "non connu"
+        // affiché comme si c'était un vrai nom de syndic).
+        $representantNomFinal = ($representantConnu && !$isPlaceholderNom)
+            ? $representantNom
+            : null;
 
-        $mandatEnCours = $raw['mandat_en_cours']
-            ?? $rawJson['mandat_en_cours']
-            ?? $raw['statut']              // colonne DB
-            ?? null;
-
-        $dateFinMandat = $raw['date_fin_dernier_mandat']
-            ?? $rawJson['date_fin_dernier_mandat']
-            ?? null;
-
-        // Nettoyer les valeurs vides
-        $repNom   = !empty(trim((string) $repNom))   ? $repNom   : null;
-        $sirenRep = !empty(trim((string) $sirenRep)) ? $sirenRep : null;
-        $siretRep = !empty(trim((string) $siretRep)) ? $siretRep : null;
-
-        // ════════════════════════════════════════════════════════
-        // RÈGLE MÉTIER : mandat expiré = gestionnaire de fait
-        //
-        // Si le mandat est "Pas de mandat en cours" MAIS qu'il y a
-        // une date de fin → il y avait un syndic qui peut renouveler.
-        // On considère AVEC représentant = nos clients voient l'info.
-        // ════════════════════════════════════════════════════════
-        $hasActiveRep = !empty($repNom) || !empty($sirenRep) || !empty($siretRep);
-        $mandatExpire = !$hasActiveRep && !empty($dateFinMandat);
-
-        // Avec représentant si :
-        //   - nom ou siren ou siret connu (mandat actif)
-        //   - OU mandat expiré avec date connue (gestionnaire de fait)
-        $repConnu = !empty($repNom)
-            || !empty($sirenRep)
-            || !empty($siretRep)
-            || $mandatExpire;
-
-        // Message adapté au statut du mandat
-        if (!$repConnu) {
-            $messageRep = 'Pas de représentant légal connu';
-        } elseif ($mandatExpire) {
-            $messageRep = 'Mandat expiré le ' . $dateFinMandat . ' — renouvellement en attente';
-        } else {
-            $messageRep = null; // mandat actif → pas de message
+        $rawData = $item['raw_data'] ?? $item;
+        if (is_string($rawData)) {
+            $rawData = json_decode($rawData, true) ?: [];
         }
 
         return [
-            // ── Identifiants ──────────────────────────────────────
-            'numero_immatriculation'    => $raw['numero_immatriculation']   ?? null,
-            'nom_copropriete'           => $raw['nom_usage_copropriete']
-                ?? $raw['nom_copropriete']          ?? null,
-            'siren_copropriete'         => $raw['siren_copropriete']        ?? null,
-
-            // ── Représentant ──────────────────────────────────────
-            'representant_legal_nom'    => $repNom,
-            'syndic_nom'                => $repNom,      // alias blade
-            'representant_legal_type'   => $typeSyndic,
-            'type_syndic'               => $typeSyndic,
-            'siren_syndic'              => $sirenRep,
-            'siren_representant_legal'  => $sirenRep,
-            'siret_syndic'              => $siretRep,
-            'siret_representant_legal'  => $siretRep,
-            'representant_legal_connu'  => $repConnu,
-
-            // ── Mandat ────────────────────────────────────────────
-            'statut'                    => $mandatEnCours,
-            'mandat_en_cours'           => $mandatEnCours,
-            'mandat_expire'             => $mandatExpire,   // ← NOUVEAU
-            'date_fin_dernier_mandat'   => $dateFinMandat,
-
-            // ── Localisation ──────────────────────────────────────
-            'adresse_complete'          => $raw['adresse_reference']        ?? null,
-            'code_postal'               => $raw['code_postal_adresse']      ?? null,
-            'code_postal_adresse'       => $raw['code_postal_adresse']      ?? null,
-            'ville'                     => $raw['commune_adresse']
-                ?? $raw['nom_officiel_commune']     ?? null,
-            'commune_adresse'           => $raw['commune_adresse']          ?? null,
-            'nom_officiel_commune'      => $raw['nom_officiel_commune']     ?? null,
-
-            // ── Lots ──────────────────────────────────────────────
-            'nombre_lots_total'         => $raw['nombre_total_lots']        ?? null,
-            'nombre_lots_habitation'    => $raw['nombre_lots_habitation']   ?? null,
-            'date_immatriculation'      => $raw['date_immatriculation']     ?? null,
-
-            // ── Score ─────────────────────────────────────────────
-            'score_match'               => $raw['score_match']
-                ?? $raw['score']                    ?? null,
-
-            // ── Message représentant ──────────────────────────────
-            'message_representant'      => $messageRep,
-
-            // ── Raw data original ─────────────────────────────────
-            'raw_data'                  => $raw,
+            'numero_immatriculation'    => $item['numero_immatriculation'] ?? null,
+            'nom_copropriete'           => $item['nom_copropriete'] ?? null,
+            'siren_copropriete'         => $item['siren_copropriete'] ?? null,
+            'nombre_lots_total'         => $item['nombre_lots_total'] ?? null,
+            'nombre_lots_habitation'    => $item['nombre_lots_habitation'] ?? null,
+            'nombre_batiments'          => $item['nombre_batiments'] ?? null,
+            'nombre_adresses_associees' => $item['nombre_adresses_associees'] ?? null,
+            'statut'                    => $item['statut'] ?? null,
+            'date_immatriculation'      => $item['date_immatriculation'] ?? null,
+            'representant_legal_connu'  => $representantConnu,
+            'representant_legal_type'   => $representantConnu ? ($item['representant_legal_type'] ?? 'syndic') : null,
+            'message_representant'      => $representantConnu ? null : 'Pas de représentant légal connu',
+            'representant_legal_nom'    => $representantNomFinal,
+            'syndic_nom'                => $representantConnu ? ($item['syndic_nom'] ?? $representantNomFinal) : null,
+            'siren_syndic'              => $representantConnu ? $sirenSyndic : null,
+            'siret_syndic'              => $representantConnu ? $siretSyndic : null,
+            'score_match'               => $item['score_match'] ?? null,
+            'adresse_rnic_match'        => $item['adresse_rnic_match'] ?? null,
+            'adresse_match_exact'       => $item['adresse_match_exact'] ?? false,
+            'adresses_associees_liste'  => $item['adresses_associees_liste'] ?? [],
+            '_source'                   => $item['_source'] ?? 'local',
+            '_lien_officiel'            => $item['_lien_officiel'] ?? null,
+            'raw_data'                  => $rawData,
         ];
     }
-    // ── DÉTECTION PLACEHOLDER ─────────────────────────────────────
+
+    // ─────────────────────────────────────────────────────────────
+    // DÉTECTION DE VALEUR PLACEHOLDER (FIX PRINCIPAL)
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * Détecte si une valeur texte est en réalité un "vide déguisé"
+     * (ex: "non connu", "inconnu", "-", etc.) plutôt qu'une vraie donnée.
+     * Normalise accents/casse/ponctuation avant comparaison.
+     */
     private function isPlaceholderValue(?string $value): bool
     {
-        if ($value === null) return true;
+        if ($value === null) {
+            return true;
+        }
+
         $normalized = Str::ascii(mb_strtolower(trim($value)));
         $normalized = preg_replace('/[^a-z0-9]+/', ' ', $normalized);
         $normalized = trim($normalized);
-        if ($normalized === '') return true;
+
+        if ($normalized === '') {
+            return true;
+        }
+
         return in_array($normalized, self::PLACEHOLDER_VALUES, true);
     }
 
+    /**
+     * Nettoie un identifiant (SIREN/SIRET) : enlève les valeurs
+     * placeholder et ne garde que les chiffres si la valeur est valide.
+     */
     private function cleanIdentifier(?string $value): ?string
     {
-        if ($this->isPlaceholderValue($value)) return null;
+        if ($this->isPlaceholderValue($value)) {
+            return null;
+        }
+
         $digits = preg_replace('/\D/', '', $value);
+
         return $digits !== '' ? $digits : null;
     }
 
-    // ── MATCHING ADRESSE ──────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════
+    // MÉTHODES PRIVÉES — matching d'adresse
+    // ═══════════════════════════════════════════════════════════════
+
     private function extractStreetType(?string $text): ?string
     {
         $text = Str::ascii(mb_strtolower($text ?? ''));
         $map  = [
-            'rue' => ['rue', 'r'],
-            'avenue' => ['avenue', 'av', 'avenu'],
+            'rue'       => ['rue', 'r'],
+            'avenue'    => ['avenue', 'av', 'avenu'],
             'boulevard' => ['boulevard', 'bd', 'boul'],
-            'allee' => ['allee', 'all'],
-            'chemin' => ['chemin', 'ch'],
-            'route' => ['route', 'rte'],
-            'impasse' => ['impasse'],
-            'place' => ['place', 'pl'],
-            'square' => ['square', 'sq'],
-            'cours' => ['cours', 'crs'],
-            'quai' => ['quai'],
+            'allee'     => ['allee', 'all'],
+            'chemin'    => ['chemin', 'ch'],
+            'route'     => ['route', 'rte'],
+            'impasse'   => ['impasse'],
+            'place'     => ['place', 'pl'],
+            'square'    => ['square', 'sq'],
+            'cours'     => ['cours', 'crs'],
+            'quai'      => ['quai'],
         ];
         foreach ($map as $canonical => $aliases) {
             foreach ($aliases as $alias) {
-                if (preg_match('/\b' . preg_quote($alias, '/') . '\b/u', $text)) return $canonical;
+                if (preg_match('/\b' . preg_quote($alias, '/') . '\b/u', $text)) {
+                    return $canonical;
+                }
             }
         }
         return null;
@@ -379,6 +406,11 @@ class CoproprieteApiService
         return array_values(array_filter($words, fn($w) => strlen($w) >= 4 && !is_numeric($w) && !in_array($w, $stopWords, true) && !preg_match('/^\d{5}$/', $w)));
     }
 
+    /**
+     * FIX : on filtre maintenant les adresses placeholder (ex: "non connu"
+     * dans adresse_complementaire_3) qui ne devraient pas être utilisées
+     * comme candidates pour le matching d'adresse.
+     */
     private function candidateAddressesForCopro(RnicCopropriete $copro): array
     {
         $raw = $copro->raw_data ?? [];
@@ -386,12 +418,12 @@ class CoproprieteApiService
 
         $addresses = [
             $copro->adresse_complete,
-            $raw['adresse_reference']        ?? null,
-            $raw['adresse_de_reference']     ?? null,
-            $raw['numero_voie_adresse']      ?? null,
-            $raw['adresse_complementaire_1'] ?? null,
-            $raw['adresse_complementaire_2'] ?? null,
-            $raw['adresse_complementaire_3'] ?? null,
+            $raw['adresse_reference']          ?? null,
+            $raw['adresse_de_reference']       ?? null, // nouveau nom CSV
+            $raw['numero_voie_adresse']        ?? null,
+            $raw['adresse_complementaire_1']   ?? null,
+            $raw['adresse_complementaire_2']   ?? null,
+            $raw['adresse_complementaire_3']   ?? null,
         ];
 
         return collect($addresses)
@@ -406,7 +438,9 @@ class CoproprieteApiService
                 }
                 return $address;
             })
-            ->unique()->values()->toArray();
+            ->unique()
+            ->values()
+            ->toArray();
     }
 
     private function buildAssociatedAddresses($sameImmatriculation, RnicCopropriete $copro): array
@@ -475,12 +509,23 @@ class CoproprieteApiService
         return min($score, 100);
     }
 
+    /**
+     * FIX : nettoie un nom de représentant en enlevant SIREN/SIRET
+     * embarqués, ET neutralise les valeurs placeholder (ex: "non connu")
+     * qui ne sont pas de vrais noms de syndic.
+     */
     private function cleanRepresentativeName(?string $name): ?string
     {
-        if ($this->isPlaceholderValue($name)) return null;
+        if ($this->isPlaceholderValue($name)) {
+            return null;
+        }
+
         $name = preg_replace('/\b\d{14}\b/', '', $name);
         $name = preg_replace('/\b\d{9}\b/', '', $name);
         $name = trim(preg_replace('/\s+/', ' ', $name));
+
+        // Après nettoyage des chiffres, vérifier à nouveau si le
+        // résultat n'est pas devenu vide ou un placeholder.
         return $this->isPlaceholderValue($name) ? null : ($name ?: null);
     }
 
