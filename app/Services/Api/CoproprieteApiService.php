@@ -32,15 +32,51 @@ class CoproprieteApiService
     ) {}
 
     public function searchByAddress(string $adresse, ?string $codePostal = null, ?string $ville = null): array
-    {
-        $cpDepuisAdresse = $this->extractPostalCode($adresse);
-        $codePostalFinal = $cpDepuisAdresse ?? $codePostal;
-        $results = $this->searchLocal($adresse, $codePostalFinal, $ville);
-        if (empty($results)) {
-            $results = $this->searchRnicApi($adresse, $codePostalFinal, $ville);
-        }
-        return $results;
+{
+    $cpDepuisAdresse = $this->extractPostalCode($adresse);
+    $codePostalFinal = $cpDepuisAdresse ?? $codePostal;
+
+    // ── 1. Recherche locale ───────────────────────────────
+    $results = $this->searchLocal($adresse, $codePostalFinal, $ville);
+
+    // ── 2. Fallback API si rien trouvé ────────────────────
+    if (empty($results)) {
+        return $this->searchRnicApi($adresse, $codePostalFinal, $ville);
     }
+
+    // ── 3. ✅ NOUVEAU — Vérification live si mandat expiré ──
+    // Si le résultat local montre un mandat expiré ET pas de représentant
+    // → interroger l'API officielle pour avoir les données fraîches
+    $hasExpiredMandat = collect($results)->contains(function ($r) {
+        $raw = $r['raw_data'] ?? [];
+        if (is_string($raw)) $raw = json_decode($raw, true) ?: [];
+        $mandat = $raw['mandat_en_cours'] ?? $r['statut'] ?? null;
+        $dateFin = $raw['date_fin_dernier_mandat'] ?? null;
+        $hasRep = !empty($r['representant_legal_nom'])
+               || !empty($r['siren_syndic'] ?? $raw['siren_representant_legal'] ?? null);
+        return !$hasRep && !empty($dateFin) && !empty($mandat);
+    });
+
+    if ($hasExpiredMandat) {
+        // Interroger l'API live pour données fraîches
+        $liveResults = $this->searchRnicApi($adresse, $codePostalFinal, $ville);
+
+        if (!empty($liveResults)) {
+            // Préférer les données live si elles ont un représentant actif
+            $liveHasRep = collect($liveResults)->contains(function ($r) {
+                $rep = $r['representant_legal'] ?? [];
+                return ($rep['present'] ?? false) && !empty($rep['nom'] ?? $rep['siret'] ?? null);
+            });
+
+            if ($liveHasRep) {
+                // Données live plus fraîches → les utiliser
+                return $liveResults;
+            }
+        }
+    }
+
+    return $results;
+}
 
     private function searchLocal(string $adresse, ?string $codePostal, ?string $ville): array
     {
