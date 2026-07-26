@@ -10,6 +10,7 @@ use App\Http\Controllers\Back\RechercheController;
 use App\Http\Controllers\Back\ImportCsvController;
 use App\Http\Controllers\Back\NotificationController;
 use App\Http\Controllers\Back\MaintenanceController;
+use App\Http\Controllers\Back\CsvImportController;
 
 Route::middleware(['auth', 'verified', 'is_admin'])
     ->prefix('back')
@@ -117,8 +118,23 @@ Route::middleware(['auth', 'verified', 'is_admin'])
 
 
 
+      Route::prefix('csv-imports')->name('csv-imports.')->group(function () {
 
+    Route::get('/', [CsvImportController::class, 'index'])
+        ->name('index');
 
+  Route::get('/download/{systeme}/{id}', [CsvImportController::class, 'download'])
+    ->name('download');
+
+    Route::delete('/{import}', [CsvImportController::class, 'destroy'])
+        ->name('destroy');
+
+    Route::delete('/bulk/delete', [CsvImportController::class, 'bulkDelete'])
+        ->name('bulk-delete');
+
+    Route::delete('/reset/all', [CsvImportController::class, 'reset'])
+        ->name('reset');
+});
         // routes/back.php
         Route::prefix('maintenance')->name('maintenance.')->group(function () {
             Route::get('/', [MaintenanceController::class, 'index'])->name('index');

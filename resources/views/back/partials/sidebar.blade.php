@@ -523,6 +523,9 @@
                 <a href="{{ route('back.maintenance.index') }}" class="sb-link">
                     <i class="fa-solid fa-screwdriver-wrench"></i> Maintenance DB
                 </a>
+                <a href="{{ route('back.csv-imports.index') }}">
+                    <i class="fa-solid fa-file-csv"></i> Imports CSV
+                </a>
                 {{-- ── Section Superadmin — visible uniquement pour les superadmins ── --}}
                 @if (auth()->user()->isSuperAdmin())
                     <div class="sb-label">Superadmin</div>
