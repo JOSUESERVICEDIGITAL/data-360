@@ -18,6 +18,9 @@ public function index(Request $request)
     $perPage = (int) $request->input('per_page', 20);
     $perPage = in_array($perPage, [20,50,100,200]) ? $perPage : 20;
 
+    $search = $request->input('search');
+
+
     /*
     |--------------------------------------------------------------------------
     | Nouveaux imports (BDD)
@@ -34,6 +37,8 @@ public function index(Request $request)
 
             return $i;
         });
+
+
 
     /*
     |--------------------------------------------------------------------------
@@ -87,6 +92,8 @@ public function index(Request $request)
 
     }
 
+
+
     /*
     |--------------------------------------------------------------------------
     | Fusion
@@ -98,6 +105,45 @@ public function index(Request $request)
         ->sortByDesc('created_at')
         ->values();
 
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Recherche
+    |--------------------------------------------------------------------------
+    */
+
+    if ($search) {
+
+        $search = strtolower($search);
+
+        $imports = $imports->filter(function ($import) use ($search) {
+
+            $nom = strtolower($import->nom_fichier ?? '');
+
+            $statut = strtolower($import->statut ?? '');
+
+            $email = strtolower(
+                $import->user->email ?? ''
+            );
+
+            $name = strtolower(
+                $import->user->name ?? ''
+            );
+
+
+            return str_contains($nom, $search)
+                || str_contains($statut, $search)
+                || str_contains($email, $search)
+                || str_contains($name, $search)
+                || str_contains((string)$import->id, $search);
+
+        })->values();
+
+    }
+
+
+
     /*
     |--------------------------------------------------------------------------
     | Pagination manuelle
@@ -106,10 +152,12 @@ public function index(Request $request)
 
     $page = LengthAwarePaginator::resolveCurrentPage();
 
+
     $items = $imports->slice(
         ($page-1)*$perPage,
         $perPage
     )->values();
+
 
     $imports = new LengthAwarePaginator(
 
@@ -127,6 +175,8 @@ public function index(Request $request)
         ]
 
     );
+
+
 
     /*
     |--------------------------------------------------------------------------
@@ -146,6 +196,7 @@ public function index(Request $request)
         'erreur' => CsvImport::where('statut','erreur')->count(),
 
     ];
+
 
     return view(
         'back.csv-imports.index',

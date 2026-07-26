@@ -397,6 +397,25 @@
 
             {{-- Toolbar --}}
             <div class="ci-toolbar">
+                <form method="GET" action="{{ route('back.csv-imports.index') }}"
+                    style="display:flex;align-items:center;gap:10px;">
+
+                    <input type="text" name="search" value="{{ request('search') }}"
+                        placeholder="Rechercher un fichier..."
+                        style="
+            border:1px solid #e2e8f0;
+            border-radius:12px;
+            padding:9px 14px;
+            width:260px;
+            font-size:.85rem;
+        ">
+
+                    <button class="ci-btn ci-btn-primary">
+                        <i class="fa-solid fa-search"></i>
+                        Chercher
+                    </button>
+
+                </form>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
                     <div class="ci-pill">Total : {{ $imports->total() }}</div>
                     <div class="ci-pill" style="color:#15803d;">✓ Terminés : {{ $importStats['termine'] }}</div>
@@ -513,9 +532,9 @@
                                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                                         @if ($import->statut === 'termine' && (!empty($import->xlsx_content) || !empty($import->filename_result)))
                                             <a href="{{ route('back.csv-imports.download', [
-    'systeme' => $import->systeme,
-    'id' => $import->id,
-]) }}"
+                                                'systeme' => $import->systeme,
+                                                'id' => $import->id,
+                                            ]) }}"
                                                 class="ci-btn ci-btn-primary">
                                                 <i class="fa-solid fa-download"></i> Télécharger
                                             </a>
@@ -530,18 +549,19 @@
                                                 {{ $import->statut === 'erreur' ? 'Erreur' : 'En attente' }}
                                             </span>
                                         @endif
-                                        @if($import->systeme === 'nouveau')
-<form method="POST" action="{{ route('back.csv-imports.destroy', $import) }}"
-      onsubmit="return confirm('Supprimer cet import ?')">
-    @csrf
-    @method('DELETE')
+                                        @if ($import->systeme === 'nouveau')
+                                            <form method="POST"
+                                                action="{{ route('back.csv-imports.destroy', $import) }}"
+                                                onsubmit="return confirm('Supprimer cet import ?')">
+                                                @csrf
+                                                @method('DELETE')
 
-    <button type="submit" class="ci-btn ci-btn-danger">
-        <i class="fa-solid fa-trash"></i>
-    </button>
-</form>
-@endif
-                                           
+                                                <button type="submit" class="ci-btn ci-btn-danger">
+                                                    <i class="fa-solid fa-trash"></i>
+                                                </button>
+                                            </form>
+                                        @endif
+
                                     </div>
                                 </td>
                             </tr>
