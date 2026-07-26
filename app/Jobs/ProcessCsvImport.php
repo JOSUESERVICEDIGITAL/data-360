@@ -303,7 +303,7 @@ class ProcessCsvImport implements ShouldQueue
                     $rowData['historique_derniere'] = '';
                 } else {
                     try {
-                        $result  = $engine->searchByAddress($adresseQuery);
+                        $result = $engine->searchByAddress($adresseQuery, $import->user_id);
                         $rowData = $this->mapResultToRowData($result, $record, $originalCols);
 
                         if ($import->user) $import->user->consumeCredit();
@@ -342,7 +342,6 @@ class ProcessCsvImport implements ShouldQueue
             ]);
 
             Log::info("ProcessCsvImport [{$import->id}] terminé — {$total} adresses");
-
         } catch (\Throwable $e) {
             Log::error("ProcessCsvImport [{$import->id}] ERREUR: " . $e->getMessage());
             Log::error($e->getTraceAsString());
@@ -489,13 +488,13 @@ class ProcessCsvImport implements ShouldQueue
 
         $lower = mb_strtolower(trim($value));
 
-        return match($key) {
+        return match ($key) {
 
             // ── ✅ Historique — colonne la plus importante ────
             // 🔴 Rouge = déjà recherchée → à exclure dans le filtre Excel
             // 🟢 Vert  = nouvelle adresse → à garder
             'historique_statut' => str_contains($lower, 'déjà') ? $red : $green,
-            'historique_nb_fois'=> $value !== '0' && $value !== '' ? $orange : null,
+            'historique_nb_fois' => $value !== '0' && $value !== '' ? $orange : null,
 
             // ── Représentant légal ───────────────────────────
             'representant_legal' => str_contains($lower, 'avec') ? $green : $red,
@@ -507,9 +506,8 @@ class ProcessCsvImport implements ShouldQueue
             'type_chauffage_principal' => str_contains($lower, 'collectif') ? $red : $green,
 
             // ── Énergie chauffage ────────────────────────────
-            'energie_chauffage_collectif' =>
-                (str_contains($lower, 'electr') || str_contains($lower, 'électr'))
-                    ? $green : $red,
+            'energie_chauffage_collectif' => (str_contains($lower, 'electr') || str_contains($lower, 'électr'))
+                ? $green : $red,
 
             // ── QPV ──────────────────────────────────────────
             'qpv_eligible' => $lower === 'éligible' ? $green : $red,
@@ -538,7 +536,7 @@ class ProcessCsvImport implements ShouldQueue
         }
 
         $adresse  = $result['adresse']           ?? null;
-        $batiments= $result['batiments']          ?? [];
+        $batiments = $result['batiments']          ?? [];
         $copros   = $result['coproprietes']       ?? [];
         $syndics  = $result['syndics']            ?? [];
         $qpv      = $result['qpv']                ?? null;
@@ -554,12 +552,14 @@ class ProcessCsvImport implements ShouldQueue
         $hasQp2015 = $qpvChecks->contains(fn($c) => $c['result']['qp_2015'] ?? false);
         $hasZfu    = $qpvChecks->contains(fn($c) => $c['result']['zfu']     ?? false);
 
-        $rnbId = null; $rnbStatut = null; $rnbAddrs = collect();
+        $rnbId = null;
+        $rnbStatut = null;
+        $rnbAddrs = collect();
         if ($rnbData) $this->extractRnbData($rnbData, $rnbId, $rnbStatut, $rnbAddrs);
 
-        $repNom    = $this->v($copro, ['representant_legal_nom','syndic_nom']);
-        $sirenSynd = $this->v($copro, ['siren_syndic','siren_representant_legal']);
-        $siretSynd = $this->v($copro, ['siret_syndic','siret_representant_legal']);
+        $repNom    = $this->v($copro, ['representant_legal_nom', 'syndic_nom']);
+        $sirenSynd = $this->v($copro, ['siren_syndic', 'siren_representant_legal']);
+        $siretSynd = $this->v($copro, ['siret_syndic', 'siret_representant_legal']);
 
         // Vérifier mandat expiré comme dans la blade
         $statutCopro   = $this->v($copro, ['statut', 'mandat_en_cours']);
@@ -582,16 +582,16 @@ class ProcessCsvImport implements ShouldQueue
 
             'representant_legal'          => $repLabel,
             'nom_representant'            => $repNom ?: $this->v($syndic, ['nom']),
-            'type_representant'           => $this->v($copro, ['representant_legal_type','type_syndic']) ?: ($syndic?'syndic professionnel':''),
+            'type_representant'           => $this->v($copro, ['representant_legal_type', 'type_syndic']) ?: ($syndic ? 'syndic professionnel' : ''),
             'siren_syndic'                => $sirenSynd ?: $this->v($syndic, ['siren']),
             'siret_syndic'                => $siretSynd ?: $this->v($syndic, ['siret']),
             'immatriculation_copro'       => $this->v($copro, ['numero_immatriculation']),
-            'nom_residence'               => $this->v($copro, ['nom_copropriete','nom_usage_copropriete']),
+            'nom_residence'               => $this->v($copro, ['nom_copropriete', 'nom_usage_copropriete']),
             'nb_lots_habitation'          => $this->v($copro, ['nombre_lots_habitation']),
             'score_rnic'                  => $this->v($copro, ['score_match']),
             'type_batiment'               => $this->v($batiment, ['type_batiment']),
-            'type_chauffage_principal'    => $this->v($batiment, ['type_chauffage','chauffage_principal']),
-            'energie_chauffage_collectif' => $this->v($batiment, ['energie_chauffage','energie_principale_chauffage']),
+            'type_chauffage_principal'    => $this->v($batiment, ['type_chauffage', 'chauffage_principal']),
+            'energie_chauffage_collectif' => $this->v($batiment, ['energie_chauffage', 'energie_principale_chauffage']),
             'annee_construction'          => $this->v($batiment, ['annee_construction']),
             'nb_logements'                => $this->v($batiment, ['nombre_logements']),
             'nb_niveaux'                  => $this->v($batiment, ['nombre_niveaux']),
@@ -609,7 +609,7 @@ class ProcessCsvImport implements ShouldQueue
             'code_insee'                  => $adresse?->code_insee        ?? '',
             'latitude'                    => $adresse?->latitude  !== null ? (string) $adresse->latitude  : '',
             'longitude'                   => $adresse?->longitude !== null ? (string) $adresse->longitude : '',
-            'qpv_eligible'                => !($hasQp2024||$hasQp2015||$hasZfu) ? 'Éligible' : 'Non éligible',
+            'qpv_eligible'                => !($hasQp2024 || $hasQp2015 || $hasZfu) ? 'Éligible' : 'Non éligible',
             'qp_2024'                     => $hasQp2024 ? 'Oui' : 'Non',
             'qp_2015'                     => $hasQp2015 ? 'Oui' : 'Non',
             'zfu'                         => $hasZfu    ? 'Oui' : 'Non',
@@ -656,7 +656,7 @@ class ProcessCsvImport implements ShouldQueue
     private function detectAdresseColumn(array $cols): ?string
     {
         foreach ($cols as $col) {
-            if (in_array(strtolower(trim($col)), ['adresse','address','adresse_complete'], true)) return $col;
+            if (in_array(strtolower(trim($col)), ['adresse', 'address', 'adresse_complete'], true)) return $col;
         }
         return $cols[0] ?? null;
     }

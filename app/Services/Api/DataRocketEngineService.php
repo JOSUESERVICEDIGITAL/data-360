@@ -27,7 +27,7 @@ class DataRocketEngineService
     // ─────────────────────────────────────────────────────────────
     // POINT D'ENTRÉE PRINCIPAL
     // ─────────────────────────────────────────────────────────────
-    public function searchByAddress(string $query): array
+    public function searchByAddress(string $query, ?int $userId = null): array
     {
         set_time_limit(120);
         ini_set('max_execution_time', 120);
@@ -41,7 +41,7 @@ class DataRocketEngineService
             ->first();
 
         if ($adresseCache && $adresseCache->batiments->isNotEmpty()) {
-            return $this->buildResultFromCache($adresseCache, $query);
+           return $this->buildResultFromCache($adresseCache, $query, $userId);
         }
 
         // ════════════════════════════════════════════════════════
@@ -51,7 +51,7 @@ class DataRocketEngineService
 
         if (!$geo) {
             $recherche = Recherche::create([
-                'user_id' => Auth::id(),
+                'user_id' => $userId ?? Auth::id(),
                 'requete' => $query,
                 'statut'  => 'introuvable',
                 'message' => 'Adresse introuvable au géocodage.',
@@ -286,7 +286,7 @@ class DataRocketEngineService
             : 'Adresse trouvée, mais données bâtiment/copropriété encore incomplètes.';
 
         $recherche = Recherche::create([
-            'user_id'    => Auth::id(),
+            'user_id' => $userId ?? Auth::id(),
             'adresse_id' => $adresse->id,
             'requete'    => $query,
             'statut'     => $statut,
@@ -331,7 +331,7 @@ class DataRocketEngineService
     // ─────────────────────────────────────────────────────────────
     // CACHE — Retour rapide depuis la base
     // ─────────────────────────────────────────────────────────────
-    private function buildResultFromCache(Adresse $adresse, string $query): array
+    private function buildResultFromCache(Adresse $adresse, string $query, ?int $userId = null): array
     {
         $coproprietes = $adresse->coproprietes;
         $syndics      = $coproprietes
@@ -341,7 +341,7 @@ class DataRocketEngineService
             ->values();
 
         $recherche = Recherche::create([
-            'user_id'    => Auth::id(),
+            'user_id'    => $userId ?? Auth::id(),
             'adresse_id' => $adresse->id,
             'requete'    => $query,
             'statut'     => 'trouve',
