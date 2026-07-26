@@ -40,7 +40,12 @@ class DataRocketEngineService
             ->with(['batiments', 'coproprietes.syndics'])
             ->first();
 
-        if ($adresseCache && $adresseCache->batiments->isNotEmpty()) {
+        if (
+            $adresseCache &&
+            $adresseCache->batiments->isNotEmpty()
+            &&
+            !$this->cacheCoprosolete($adresseCache)
+        ) {
            return $this->buildResultFromCache($adresseCache, $query, $userId);
         }
 
@@ -246,7 +251,7 @@ class DataRocketEngineService
 
                 if ($nomRepresentantFinal || $sirenSyndic || $siretSyndic) {
                     $copro->update([
-                        'representant_legal_connu' => true,
+                        'representant_legal_connu' => $coproData['representant_legal_connu'] ?? false,
                         'representant_legal_nom'   => $nomRepresentantFinal,
                         'representant_legal_type'  => $coproData['representant_legal_type']
                                                    ?? 'syndic professionnel',
@@ -326,6 +331,35 @@ class DataRocketEngineService
             'proprietaires_bdnb'=> $proprietairesBdnb,
             'qpv'               => $qpvChecks,
         ];
+    }
+
+    private function cacheCoprosolete(Adresse $adresse): bool
+    {
+        foreach($adresse->coproprietes as $copro){
+
+            $raw = $copro->raw_data;
+
+            if(is_string($raw)){
+                $raw=json_decode($raw,true) ?: [];
+            }
+
+            $dateImport = $raw['date_immatriculation'] ?? null;
+
+            if(!$dateImport){
+                return true;
+            }
+
+            // exemple : cache de plus de 30 jours
+            if(
+                now()->diffInDays(
+                    \Carbon\Carbon::parse($dateImport)
+                ) > 30
+            ){
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // ─────────────────────────────────────────────────────────────

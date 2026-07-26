@@ -66,33 +66,9 @@ class CoproprieteApiService
 
             if (!empty($liveResults)) {
 
-
-                // Vérifier si le RNIC public possède un représentant actif
-                $liveHasActiveRep = collect($liveResults)->contains(function ($r) {
-
-
-                    $nom = $r['representant_legal_nom'] ?? null;
-                    $siren = $r['siren_syndic'] ?? null;
-                    $siret = $r['siret_syndic'] ?? null;
-
-
-                    return !empty($nom)
-                        || !empty($siren)
-                        || !empty($siret);
-                });
-
-
-
-                if ($liveHasActiveRep) {
-
-                    // Les données officielles sont plus récentes
-                    return $liveResults;
-                }
-
-
-                // Sinon on garde les données locales
-                // car l'ancien mandat reste une information historique
-
+                // Le RNIC est la source de vérité : on lui fait toujours confiance,
+                // même s'il indique l'absence de représentant légal.
+                return $liveResults;
             }
         }
 
@@ -316,24 +292,27 @@ class CoproprieteApiService
 */
 
         // Représentant actif uniquement
-        $repConnu = $hasRepresentative && !$mandatExpire;
+        $repConnu = !empty($repNom)
+            || !empty($sirenRep)
+            || !empty($siretRep);
 
 
         // Ancien représentant uniquement
         $ancienRepresentant = $hasRepresentative && $mandatExpire;
 
 
-        if ($repConnu) {
+        if (!$repConnu && $mandatExpire) {
 
-            $messageRep = null;
-        } elseif ($ancienRepresentant) {
+            $messageRep = 'Ancien représentant connu - mandat expiré le '.$dateFinMandat;
 
-            $messageRep =
-                'Ancien représentant - mandat expiré le ' . $dateFinMandat;
+        } elseif (!$repConnu) {
+
+            $messageRep = 'Pas de représentant légal connu';
+
         } else {
 
-            $messageRep =
-                'Pas de représentant légal connu';
+            $messageRep = null;
+
         }
         return [
             // ── Identifiants ──────────────────────────────────────
