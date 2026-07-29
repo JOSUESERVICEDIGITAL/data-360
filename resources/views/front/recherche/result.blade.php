@@ -519,145 +519,486 @@
 
 {{-- ═══ SECTION 2 — REPRÉSENTANT LÉGAL ════════════════════════════════ --}}
 <div class="dr-panel" id="panel-representant">
+
     <div class="dr-panel-header">
+
         <div class="dr-panel-title">
-            <div class="dr-panel-icon"><i class="fa-solid fa-user-tie"></i></div>
-            <div><h2>Représentant légal</h2><p>Synthèse du syndic ou représentant issu du RNIC</p></div>
+            <div class="dr-panel-icon">
+                <i class="fa-solid fa-user-tie"></i>
+            </div>
+            <div>
+                <h2>Représentant légal</h2>
+                <p>Synthèse du syndic ou représentant issu du RNIC</p>
+            </div>
         </div>
+
+
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+
             {{-- Badge principal --}}
-            @if($representantConnu)
-                <div class="dr-status success"><i class="fa-solid fa-circle-check"></i> Avec représentant légal</div>
-            @else
-                <div class="dr-status danger"><i class="fa-solid fa-circle-exclamation"></i> Pas de représentant légal</div>
-            @endif
-            {{-- Badge mandat expiré --}}
-            @if($mandatExpire)
-                <div class="badge-mandat-expire">
-                    <i class="fa-solid fa-clock"></i> Mandat expiré le {{ $dateFinMandat }} — renouvellement en attente
+            @if($representantConnu && !empty($representantNom))
+
+                <div class="dr-status success">
+                    <i class="fa-solid fa-circle-check"></i>
+                    Avec représentant légal
                 </div>
+
+            @else
+
+                <div class="dr-status danger">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    Pas de représentant légal
+                </div>
+
             @endif
-            {{-- Badge multi-immatriculation --}}
+
+
+            {{-- Badge multi immatriculation --}}
             @if($hasMultipleImmat)
+
                 <div class="badge-multi-immat">
                     <i class="fa-solid fa-triangle-exclamation"></i>
-                    {{ $nbImmatriculations===2?'Double immatriculation':$nbImmatriculations.' immatriculations' }}
+
+                    {{ $nbImmatriculations===2
+                        ? 'Double immatriculation'
+                        : $nbImmatriculations.' immatriculations'
+                    }}
+
                 </div>
+
             @endif
+
         </div>
+
     </div>
 
+
+
     @if(!$adresseEnregistree)
-        <div class="dr-empty">Adresse non enregistrée dans le RNIC pour cette recherche.</div>
+
+        <div class="dr-empty">
+            Adresse non enregistrée dans le RNIC pour cette recherche.
+        </div>
+
+
     @else
-        {{-- Alerte mandat expiré --}}
-        @if($mandatExpire)
-            <div style="background:#fff7ed;border:1.5px solid #f97316;border-radius:16px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px;">
-                <i class="fa-solid fa-clock" style="color:#c2410c;margin-top:2px;flex-shrink:0;"></i>
+
+
+
+        {{-- Alerte multi immatriculation uniquement --}}
+        @if($hasMultipleImmat)
+
+            <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:16px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px;">
+
+                <i class="fa-solid fa-triangle-exclamation"
+                   style="color:#b45309;margin-top:2px;flex-shrink:0;"></i>
+
+
                 <div>
-                    <div style="font-weight:800;color:#c2410c;font-size:.9rem;margin-bottom:4px;">Mandat expiré le {{ $dateFinMandat }}</div>
-                    <div style="font-size:.82rem;color:#92400e;line-height:1.5;">
-                        Le dernier mandat enregistré au RNIC a expiré. Le syndic reste le <strong>gestionnaire de fait</strong> — un renouvellement est probablement en cours ou à venir.
+
+                    <div style="font-weight:800;color:#92400e;font-size:.9rem;margin-bottom:4px;">
+
+                        {{ $nbImmatriculations===2
+                            ? 'Double immatriculation'
+                            : $nbImmatriculations.' immatriculations'
+                        }}
+
+                        — plusieurs copropriétés pour cette adresse
+
                     </div>
+
+
+                    <div style="font-size:.82rem;color:#b45309;line-height:1.5;">
+
+                        {{ $nbImmatriculations }}
+                        copropriétés immatriculées trouvées.
+
+                        Consultez l'onglet
+                        <strong>Copropriétés</strong>
+                        pour voir toutes les immatriculations.
+
+                    </div>
+
                 </div>
+
             </div>
+
         @endif
 
-        {{-- Alerte multi-immatriculation --}}
-        @if($hasMultipleImmat)
-            <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:16px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px;">
-                <i class="fa-solid fa-triangle-exclamation" style="color:#b45309;margin-top:2px;flex-shrink:0;"></i>
-                <div>
-                    <div style="font-weight:800;color:#92400e;font-size:.9rem;margin-bottom:4px;">
-                        {{ $nbImmatriculations===2?'Double immatriculation':$nbImmatriculations.' immatriculations' }} — plusieurs copropriétés pour cette adresse
-                    </div>
-                    <div style="font-size:.82rem;color:#b45309;line-height:1.5;">
-                        {{ $nbImmatriculations }} copropriétés immatriculées trouvées. Consultez l'onglet <strong>Copropriétés</strong> pour voir toutes les immatriculations.
-                    </div>
-                </div>
-            </div>
-        @endif
+
+
 
         <div class="dr-grid">
-            <div class="dr-field copyable" data-copy="{{ $adresse->adresse_complete??$q??'-' }}">
-                <div class="dr-field-label">Adresse contrôlée <i class="fa-regular fa-copy"></i></div>
-                <div class="dr-field-value">{{ $adresse->adresse_complete??$q??'-' }}</div>
-            </div>
-            <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale,['adresse_complete']) }}">
-                <div class="dr-field-label">Adresse RNIC <i class="fa-regular fa-copy"></i></div>
+
+
+            {{-- Adresse contrôlée --}}
+            <div class="dr-field copyable"
+                 data-copy="{{ $adresse->adresse_complete??$q??'-' }}">
+
+                <div class="dr-field-label">
+                    Adresse contrôlée
+                    <i class="fa-regular fa-copy"></i>
+                </div>
+
                 <div class="dr-field-value">
+                    {{ $adresse->adresse_complete??$q??'-' }}
+                </div>
+
+            </div>
+
+
+
+
+            {{-- Adresse RNIC --}}
+            <div class="dr-field copyable"
+                 data-copy="{{ dr_value($coproPrincipale,['adresse_complete']) }}">
+
+                <div class="dr-field-label">
+                    Adresse RNIC
+                    <i class="fa-regular fa-copy"></i>
+                </div>
+
+                <div class="dr-field-value">
+
                     {{ dr_value($coproPrincipale,['adresse_complete']) }}
+
                     {{ dr_value($coproPrincipale,['code_postal','code_postal_adresse']) }}
+
                     {{ dr_value($coproPrincipale,['ville','commune_adresse']) }}
+
                 </div>
+
             </div>
-            <div class="dr-field copyable" data-copy="{{ $representantNom??'' }}">
-                <div class="dr-field-label">Nom représentant / syndic <i class="fa-regular fa-copy"></i></div>
+
+
+
+
+
+            {{-- Représentant --}}
+            <div class="dr-field copyable"
+                 data-copy="{{ $representantNom??'' }}">
+
+
+                <div class="dr-field-label">
+                    Nom représentant / syndic
+                    <i class="fa-regular fa-copy"></i>
+                </div>
+
+
+
                 <div class="dr-field-value">
-                    {{ $representantNom ?: ($mandatExpire?'— (gestionnaire de fait)':'-') }}
-                    @if($mandatExpire && !empty($representantNom))
-                        <span style="display:block;font-size:.7rem;color:var(--dr-warning);margin-top:4px;font-weight:600;">⏱ Mandat expiré — renouvellement en attente</span>
+
+
+                    @if(!empty($representantNom))
+
+
+                        {{ $representantNom }}
+
+
+                        @if($mandatExpire)
+
+                            <span style="display:block;font-size:.7rem;color:var(--dr-warning);margin-top:4px;font-weight:600;">
+
+                                Ancien mandat expiré le {{ $dateFinMandat }}
+
+                            </span>
+
+                        @endif
+
+
+
+                    @else
+
+
+                        <span style="color:var(--dr-danger);">
+                            Pas de représentant légal
+                        </span>
+
+
                     @endif
+
+
                 </div>
+
+
             </div>
-            <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale,['representant_legal_type','type_syndic']) }}">
-                <div class="dr-field-label">Type représentant <i class="fa-regular fa-copy"></i></div>
-                <div class="dr-field-value">{{ dr_value($coproPrincipale,['representant_legal_type','type_syndic']) }}</div>
-            </div>
-            <div class="dr-field copyable" data-copy="{{ $sirenSyndic??'' }}">
-                <div class="dr-field-label">SIREN syndic <i class="fa-regular fa-copy"></i></div>
-                <div class="dr-field-value"><code>{{ $sirenSyndic??'-' }}</code></div>
-            </div>
-            <div class="dr-field copyable" data-copy="{{ $siretSyndic??'' }}">
-                <div class="dr-field-label">SIRET syndic <i class="fa-regular fa-copy"></i></div>
-                <div class="dr-field-value"><code>{{ $siretSyndic??'-' }}</code></div>
-            </div>
-            <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale,['numero_immatriculation']) }}">
-                <div class="dr-field-label">Immatriculation <i class="fa-regular fa-copy"></i></div>
-                <div class="dr-field-value"><code>{{ dr_value($coproPrincipale,['numero_immatriculation']) }}</code></div>
-            </div>
-            <div class="dr-field copyable" data-copy="{{ dr_value($coproPrincipale,['nom_copropriete','nom_usage_copropriete']) }}">
-                <div class="dr-field-label">Nom résidence <i class="fa-regular fa-copy"></i></div>
-                <div class="dr-field-value">{{ dr_value($coproPrincipale,['nom_copropriete','nom_usage_copropriete']) }}</div>
-            </div>
-            <div class="dr-field">
-                <div class="dr-field-label">Lots habitation</div>
-                <div class="dr-field-value">{{ dr_value($coproPrincipale,['nombre_lots_habitation']) }}</div>
-            </div>
-            <div class="dr-field">
-                <div class="dr-field-label">Score RNIC</div>
-                <div class="dr-field-value">{{ dr_value($coproPrincipale,['score_match']) }}</div>
-            </div>
-            @if($mandatExpire)
-                <div class="dr-field">
-                    <div class="dr-field-label">Date fin dernier mandat</div>
-                    <div class="dr-field-value" style="color:var(--dr-warning);"><i class="fa-solid fa-clock"></i> {{ $dateFinMandat }}</div>
+
+
+
+
+
+
+            {{-- Type représentant --}}
+            <div class="dr-field copyable"
+                 data-copy="{{ dr_value($coproPrincipale,['representant_legal_type','type_syndic']) }}">
+
+                <div class="dr-field-label">
+                    Type représentant
+                    <i class="fa-regular fa-copy"></i>
                 </div>
-            @endif
+
+                <div class="dr-field-value">
+
+                    {{ dr_value($coproPrincipale,['representant_legal_type','type_syndic']) }}
+
+                </div>
+
+            </div>
+
+
+
+
+
+            {{-- SIREN --}}
+            <div class="dr-field copyable"
+                 data-copy="{{ $sirenSyndic??'' }}">
+
+                <div class="dr-field-label">
+                    SIREN syndic
+                    <i class="fa-regular fa-copy"></i>
+                </div>
+
+                <div class="dr-field-value">
+
+                    <code>{{ $sirenSyndic??'-' }}</code>
+
+                </div>
+
+            </div>
+
+
+
+
+            {{-- SIRET --}}
+            <div class="dr-field copyable"
+                 data-copy="{{ $siretSyndic??'' }}">
+
+                <div class="dr-field-label">
+                    SIRET syndic
+                    <i class="fa-regular fa-copy"></i>
+                </div>
+
+                <div class="dr-field-value">
+
+                    <code>{{ $siretSyndic??'-' }}</code>
+
+                </div>
+
+            </div>
+
+
+
+
+
+            {{-- Immatriculation --}}
+            <div class="dr-field copyable"
+                 data-copy="{{ dr_value($coproPrincipale,['numero_immatriculation']) }}">
+
+                <div class="dr-field-label">
+                    Immatriculation
+                    <i class="fa-regular fa-copy"></i>
+                </div>
+
+                <div class="dr-field-value">
+
+                    <code>
+                        {{ dr_value($coproPrincipale,['numero_immatriculation']) }}
+                    </code>
+
+                </div>
+
+            </div>
+
+
+
+
+
+
+            {{-- Nom résidence --}}
+            <div class="dr-field copyable"
+                 data-copy="{{ dr_value($coproPrincipale,['nom_copropriete','nom_usage_copropriete']) }}">
+
+                <div class="dr-field-label">
+                    Nom résidence
+                    <i class="fa-regular fa-copy"></i>
+                </div>
+
+
+                <div class="dr-field-value">
+
+                    {{ dr_value($coproPrincipale,['nom_copropriete','nom_usage_copropriete']) }}
+
+                </div>
+
+
+            </div>
+
+
+
+
+
+            {{-- Lots --}}
+            <div class="dr-field">
+
+                <div class="dr-field-label">
+                    Lots habitation
+                </div>
+
+                <div class="dr-field-value">
+
+                    {{ dr_value($coproPrincipale,['nombre_lots_habitation']) }}
+
+                </div>
+
+            </div>
+
+
+
+
+
+            {{-- Score --}}
+            <div class="dr-field">
+
+                <div class="dr-field-label">
+                    Score RNIC
+                </div>
+
+                <div class="dr-field-value">
+
+                    {{ dr_value($coproPrincipale,['score_match']) }}
+
+                </div>
+
+            </div>
+
+
+
         </div>
+
+
+
+
 
         {{-- Liste toutes les immatriculations --}}
         @if($hasMultipleImmat)
-            <h3 style="margin:24px 0 12px;font-size:.95rem;font-weight:800;"><i class="fa-solid fa-list-check" style="color:var(--dr-blue);"></i> Toutes les immatriculations ({{ $nbImmatriculations }})</h3>
+
+
+            <h3 style="margin:24px 0 12px;font-size:.95rem;font-weight:800;">
+
+                <i class="fa-solid fa-list-check" style="color:var(--dr-blue);"></i>
+
+                Toutes les immatriculations ({{ $nbImmatriculations }})
+
+            </h3>
+
+
+
             @foreach($coprosImmatriculees as $idx=>$c)
-                @php $cHasRep=drRepConnu($c);$cMandatExp=drMandatExpire($c); @endphp
-                <div style="display:flex;align-items:center;gap:14px;background:{{ $cHasRep?'var(--dr-success-bg)':'var(--dr-soft)' }};border:1px solid {{ $cHasRep?'#86efac':'var(--dr-border)' }};border-radius:14px;padding:12px 16px;margin-bottom:8px;">
-                    <div style="font-size:1.2rem;color:{{ $cHasRep?'var(--dr-success)':'var(--dr-muted)' }}"><i class="fa-solid {{ $cHasRep?'fa-circle-check':'fa-circle-xmark' }}"></i></div>
-                    <div style="flex:1;min-width:0;">
-                        <div style="font-weight:800;font-size:.85rem;">{{ dr_value($c,['nom_copropriete','nom_usage_copropriete'],'Copropriété '.($idx+1)) }}</div>
-                        <div style="font-size:.75rem;color:var(--dr-muted);margin-top:2px;">
-                            N° {{ dr_value($c,['numero_immatriculation'],'-') }}
-                            @if(!empty(dr_value($c,['representant_legal_nom','syndic_nom'],null))) — {{ dr_value($c,['representant_legal_nom','syndic_nom']) }} @endif
-                            @if(!empty(dr_value($c,['siren_syndic','siren_representant_legal'],null))) — SIREN : {{ dr_value($c,['siren_syndic','siren_representant_legal']) }} @endif
-                            @if($cMandatExp) — <span style="color:var(--dr-warning);">Mandat expiré le {{ drDateFin($c) }}</span> @endif
-                            @if(!$cHasRep) — Pas de représentant légal @endif
-                        </div>
+
+
+                @php
+                    $cHasRep = drRepConnu($c);
+                    $cMandatExp = drMandatExpire($c);
+                    $cNomRep = dr_value($c,['representant_legal_nom','syndic_nom'],null);
+                @endphp
+
+
+
+                <div style="
+                    display:flex;
+                    align-items:center;
+                    gap:14px;
+                    background:{{ $cHasRep?'var(--dr-success-bg)':'var(--dr-soft)' }};
+                    border:1px solid {{ $cHasRep?'#86efac':'var(--dr-border)' }};
+                    border-radius:14px;
+                    padding:12px 16px;
+                    margin-bottom:8px;
+                ">
+
+
+
+                    <div style="font-size:1.2rem;">
+                        <i class="fa-solid {{ $cHasRep?'fa-circle-check':'fa-circle-xmark' }}"></i>
                     </div>
-                    <div style="font-size:.75rem;font-weight:800;color:{{ $cHasRep?'var(--dr-success)':'var(--dr-muted)' }}">Score {{ dr_value($c,['score_match'],'-') }}</div>
+
+
+
+                    <div style="flex:1;min-width:0;">
+
+
+                        <div style="font-weight:800;font-size:.85rem;">
+
+                            {{ dr_value($c,['nom_copropriete','nom_usage_copropriete'],'Copropriété '.($idx+1)) }}
+
+                        </div>
+
+
+
+                        <div style="font-size:.75rem;color:var(--dr-muted);margin-top:2px;">
+
+
+                            N°
+
+                            {{ dr_value($c,['numero_immatriculation'],'-') }}
+
+
+
+                            @if(!empty($cNomRep))
+
+                                —
+                                {{ $cNomRep }}
+
+                            @else
+
+                                —
+                                Pas de représentant légal
+
+                            @endif
+
+
+
+                            @if(!empty(dr_value($c,['siren_syndic','siren_representant_legal'],null)))
+
+                                —
+                                SIREN :
+                                {{ dr_value($c,['siren_syndic','siren_representant_legal']) }}
+
+                            @endif
+
+
+
+                        </div>
+
+                        
+
+                    </div>
+
+
+
+
+                    <div style="font-size:.75rem;font-weight:800;">
+
+                        Score
+                        {{ dr_value($c,['score_match'],'-') }}
+
+                    </div>
+
+
+
                 </div>
+
+
+
             @endforeach
+
+
         @endif
+
+
+
     @endif
+
+
 </div>
 
 {{-- ═══ SECTION 3 — ADRESSE ════════════════════════════════════════════ --}}
