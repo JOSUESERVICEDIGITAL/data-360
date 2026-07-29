@@ -90,13 +90,13 @@ return [
     ],
     'sigville' => [
         'url'      => env('SIGVILLE_API_URL', 'https://wsa.sig.ville.gouv.fr'),
-        'username' => env('SIGVILLE_USERNAME', ''),
-        'password' => env('SIGVILLE_PASSWORD', ''),
+        'username' => env('SIGVILLE_USERNAME'),
+        'password' => env('SIGVILLE_PASSWORD'),
     ],
     'rne' => [
-    'base_url' => env('RNE_API_URL', 'https://api.inpi.fr/v1'),
-    'api_key'  => env('RNE_API_KEY'),
-],
+        'base_url' => env('RNE_API_URL', 'https://api.inpi.fr/v1'),
+        'api_key'  => env('RNE_API_KEY'),
+    ],
 
 
 ];
