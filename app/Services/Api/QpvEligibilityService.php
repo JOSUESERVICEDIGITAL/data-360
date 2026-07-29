@@ -6,22 +6,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-/**
- * QpvEligibilityService — SIG Ville WSA API v2
- * ─────────────────────────────────────────────────────────────
- * Base URL  : https://wsa.sig.ville.gouv.fr
- * Auth      : HTTP Basic Auth (email + password)
- * Endpoints :
- *   /api/xy.json  → coordonnées GPS  (PRINCIPAL)
- *   /api/v2.json  → adresse WSA      (FALLBACK)
- *
- * Format réponse API v2 (validé 29/07/2026) :
- *   reponses[].type_quartier  : QP | QP_2015 | ZFU
- *   reponses[].code_reponse   : OUI | NON
- *   reponses[].nom_quartier   : nom du quartier si OUI
- *   reponses[].code_quartier  : code du quartier si OUI
- * ─────────────────────────────────────────────────────────────
- */
 class QpvEligibilityService
 {
     private string $baseUrl;
@@ -39,7 +23,6 @@ class QpvEligibilityService
     // ════════════════════════════════════════════════════════════
     // POINT D'ENTRÉE PRINCIPAL
     // ════════════════════════════════════════════════════════════
-
     public function check(
         ?float $lat        = null,
         ?float $lng        = null,
@@ -56,36 +39,22 @@ class QpvEligibilityService
         });
     }
 
-    public function isEligible(
-        ?float $lat        = null,
-        ?float $lng        = null,
-        string $adresse    = '',
-        string $commune    = '',
-        string $codePostal = ''
-    ): bool {
+    public function isEligible(?float $lat, ?float $lng, string $adresse = '', string $commune = '', string $codePostal = ''): bool
+    {
         $r = $this->check($lat, $lng, $adresse, $commune, $codePostal);
-        return !($r['qp_2024'] || $r['qp_2015'] || $r['zfu']);
+        return $r['qp_2024'] || $r['qp_2015'] || $r['zfu'];
     }
 
     // ════════════════════════════════════════════════════════════
     // APPELS API
     // ════════════════════════════════════════════════════════════
-
-    private function fetchFromApi(
-        ?float $lat,
-        ?float $lng,
-        string $adresse,
-        string $commune,
-        string $codePostal
-    ): array {
+    private function fetchFromApi(?float $lat, ?float $lng, string $adresse, string $commune, string $codePostal): array
+    {
         try {
-            // Priorité : coordonnées GPS (plus précis)
             if ($lat !== null && $lng !== null) {
                 return $this->callXyEndpoint($lat, $lng);
             }
-            // Fallback : adresse texte format WSA
             return $this->callAddressEndpoint($adresse, $commune, $codePostal);
-
         } catch (\Throwable $e) {
             Log::warning('QpvEligibilityService erreur: ' . $e->getMessage());
             return $this->emptyResult();
@@ -94,106 +63,109 @@ class QpvEligibilityService
 
     // ─────────────────────────────────────────────────────────────
     // ENDPOINT XY — /api/xy.json
-    // Géoréférencement inverse par coordonnées GPS
+    // ⚠️ L'API XY n'accepte PAS les types en virgule ni en tableau.
+    //    Il faut faire 3 appels séparés, un par type de quartier.
     // ─────────────────────────────────────────────────────────────
     private function callXyEndpoint(float $lat, float $lng): array
     {
-        $response = Http::withBasicAuth($this->username, $this->password)
-            ->timeout($this->timeout)
-            ->get($this->baseUrl . '/api/xy.json', [
-                'x'              => $lng,               // longitude = X
-                'y'              => $lat,               // latitude  = Y
-                'type_quartier[]'=> ['QP', 'QP_2015', 'ZFU'],
-            ]);
+        $result = $this->emptyResult();
 
-        if ($response->failed()) {
-            Log::warning("SIG Ville /api/xy.json → HTTP {$response->status()} — {$response->body()}");
-            return $this->emptyResult();
+        foreach (['QP' => 'qp_2024', 'QP_2015' => 'qp_2015', 'ZFU' => 'zfu'] as $typeApi => $resultKey) {
+            try {
+                $response = Http::withBasicAuth($this->username, $this->password)
+                    ->timeout($this->timeout)
+                    ->get($this->baseUrl . '/api/xy.json', [
+                        'x'             => $lng,
+                        'y'             => $lat,
+                        'type_quartier' => $typeApi,
+                    ]);
+
+                if ($response->failed()) {
+                    Log::warning("SIG Ville /api/xy.json [{$typeApi}] → HTTP {$response->status()}");
+                    continue;
+                }
+
+                $data     = $response->json();
+                $reponses = $data['reponses'] ?? [];
+
+                // Métadonnées (une seule fois)
+                if ($result['loccom_ref'] === null) {
+                    $result['loccom_ref'] = $data['loccom_ref'] ?? null;
+                }
+
+                foreach ($reponses as $rep) {
+                    if (strtoupper(trim($rep['code_reponse'] ?? '')) === 'OUI') {
+                        $result[$resultKey]              = true;
+                        $result['matches'][$resultKey]   = [
+                            'found'     => true,
+                            'code'      => $rep['code_quartier'] ?? null,
+                            'nom'       => $rep['nom_quartier']  ?? null,
+                            'bande_300' => false,
+                            'bande_500' => false,
+                        ];
+                    }
+                }
+
+            } catch (\Throwable $e) {
+                Log::warning("SIG Ville /api/xy.json [{$typeApi}] erreur: " . $e->getMessage());
+            }
         }
 
-        return $this->parseResponse($response->json());
+        return $result;
     }
 
     // ─────────────────────────────────────────────────────────────
-    // ENDPOINT V2 — /api/v2.json
-    // Géoréférencement par adresse (format WSA avec crochets)
-    // Validé le 29/07/2026 — format correct pour l'API SIG Ville
+    // ENDPOINT V2 — /api/v2.json (format WSA avec crochets)
+    // Validé 29/07/2026 — type_quartier[] fonctionne avec v2
     // ─────────────────────────────────────────────────────────────
-    private function callAddressEndpoint(
-        string $adresse,
-        string $commune,
-        string $codePostal
-    ): array {
-        if (empty($adresse) && empty($commune)) {
-            return $this->emptyResult();
-        }
-
-        $response = Http::withBasicAuth($this->username, $this->password)
-            ->timeout($this->timeout)
-            ->get($this->baseUrl . '/api/v2.json', [
-                'type_adresse'         => 'WSA',
-                'adresse[num_voie]'    => $this->extractNumero($adresse),
-                'adresse[nom_voie]'    => $this->extractNomVoie($adresse),
-                'adresse[code_postal]' => $codePostal,
-                'adresse[nom_commune]' => $commune,
-                'type_quartier[]'      => ['QP', 'QP_2015', 'ZFU'],
-            ]);
-
-        if ($response->failed()) {
-            Log::warning("SIG Ville /api/v2.json → HTTP {$response->status()} — {$response->body()}");
-            return $this->emptyResult();
-        }
-
-        return $this->parseResponse($response->json());
-    }
-
-    // ════════════════════════════════════════════════════════════
-    // PARSING DE LA RÉPONSE SIG Ville (format validé 29/07/2026)
-    //
-    // Structure retournée par l'API :
-    // {
-    //   "loccom_ref" : "COMMUNE_AVEC_QUARTIER",
-    //   "adresse"    : { "score": 97.03, ... },
-    //   "reponses"   : [
-    //     { "type_quartier": "QP",     "code_reponse": "NON", ... },
-    //     { "type_quartier": "QP_2015","code_reponse": "NON", ... },
-    //     { "type_quartier": "ZFU",    "code_reponse": "NON", ... },
-    //   ]
-    // }
-    // ════════════════════════════════════════════════════════════
-    private function parseResponse(mixed $data): array
+    private function callAddressEndpoint(string $adresse, string $commune, string $codePostal): array
     {
-        if (empty($data)) return $this->emptyResult();
+        if (empty($adresse) && empty($commune)) return $this->emptyResult();
 
-        $result   = $this->emptyResult();
-        $reponses = $data['reponses'] ?? [];
+        $result = $this->emptyResult();
 
-        // Métadonnées de localisation
-        $result['loccom_ref']  = $data['loccom_ref']       ?? null;
-        $result['locvoie_ref'] = $data['code_reponse']     ?? null;
-        $result['similitude']  = $data['adresse']['score'] ?? null;
+        foreach (['QP' => 'qp_2024', 'QP_2015' => 'qp_2015', 'ZFU' => 'zfu'] as $typeApi => $resultKey) {
+            try {
+                $response = Http::withBasicAuth($this->username, $this->password)
+                    ->timeout($this->timeout)
+                    ->get($this->baseUrl . '/api/v2.json', [
+                        'type_adresse'         => 'WSA',
+                        'adresse[num_voie]'    => $this->extractNumero($adresse),
+                        'adresse[nom_voie]'    => $this->extractNomVoie($adresse),
+                        'adresse[code_postal]' => $codePostal,
+                        'adresse[nom_commune]' => $commune,
+                        'type_quartier'        => $typeApi,
+                    ]);
 
-        // Parser chaque réponse par type de quartier
-        foreach ($reponses as $rep) {
-            $type   = strtoupper(trim($rep['type_quartier'] ?? ''));
-            $trouve = strtoupper(trim($rep['code_reponse']  ?? '')) === 'OUI';
+                if ($response->failed()) {
+                    Log::warning("SIG Ville /api/v2.json [{$typeApi}] → HTTP {$response->status()}");
+                    continue;
+                }
 
-            if (!$trouve) continue;
+                $data     = $response->json();
+                $reponses = $data['reponses'] ?? [];
 
-            $match = [
-                'found'     => true,
-                'code'      => $rep['code_quartier'] ?? null,
-                'nom'       => $rep['nom_quartier']  ?? null,
-                'bande_300' => false,
-                'bande_500' => false,
-            ];
+                if ($result['loccom_ref'] === null) {
+                    $result['loccom_ref']  = $data['loccom_ref']       ?? null;
+                    $result['similitude']  = $data['adresse']['score'] ?? null;
+                }
 
-            match ($type) {
-                'QP'      => [$result['qp_2024'] = true, $result['matches']['qp_2024'] = $match],
-                'QP_2015' => [$result['qp_2015'] = true, $result['matches']['qp_2015'] = $match],
-                'ZFU'     => [$result['zfu']     = true, $result['matches']['zfu']     = $match],
-                default   => null,
-            };
+                foreach ($reponses as $rep) {
+                    if (strtoupper(trim($rep['code_reponse'] ?? '')) === 'OUI') {
+                        $result[$resultKey]            = true;
+                        $result['matches'][$resultKey] = [
+                            'found'     => true,
+                            'code'      => $rep['code_quartier'] ?? null,
+                            'nom'       => $rep['nom_quartier']  ?? null,
+                            'bande_300' => false,
+                            'bande_500' => false,
+                        ];
+                    }
+                }
+
+            } catch (\Throwable $e) {
+                Log::warning("SIG Ville /api/v2.json [{$typeApi}] erreur: " . $e->getMessage());
+            }
         }
 
         return $result;
@@ -216,13 +188,12 @@ class QpvEligibilityService
     }
 
     // ════════════════════════════════════════════════════════════
-    // HELPERS — Découpage d'adresse pour format WSA
+    // HELPERS
     // ════════════════════════════════════════════════════════════
-
     private function extractNumero(string $adresse): ?string
     {
-        preg_match('/^\d+/', trim($adresse), $matches);
-        return $matches[0] ?? null;
+        preg_match('/^\d+/', trim($adresse), $m);
+        return $m[0] ?? null;
     }
 
     private function extractNomVoie(string $adresse): string
