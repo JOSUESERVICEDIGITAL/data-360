@@ -10,10 +10,16 @@ use Illuminate\Support\Facades\Log;
  * QpvEligibilityService — SIG Ville WSA API v2
  * ─────────────────────────────────────────────────────────────
  * Base URL  : https://wsa.sig.ville.gouv.fr
- * Auth      : HTTP Basic Auth (username + password)
+ * Auth      : HTTP Basic Auth (email + password)
  * Endpoints :
- *   /api/xy.json  → coordonnées GPS (PRINCIPAL)
- *   /api/v2.json  → adresse texte   (FALLBACK)
+ *   /api/xy.json  → coordonnées GPS  (PRINCIPAL)
+ *   /api/v2.json  → adresse WSA      (FALLBACK)
+ *
+ * Format réponse API v2 (validé 29/07/2026) :
+ *   reponses[].type_quartier  : QP | QP_2015 | ZFU
+ *   reponses[].code_reponse   : OUI | NON
+ *   reponses[].nom_quartier   : nom du quartier si OUI
+ *   reponses[].code_quartier  : code du quartier si OUI
  * ─────────────────────────────────────────────────────────────
  */
 class QpvEligibilityService
@@ -25,7 +31,7 @@ class QpvEligibilityService
 
     public function __construct()
     {
-        $this->baseUrl  = rtrim(config('services.sigville.url',      'https://wsa.sig.ville.gouv.fr'), '/');
+        $this->baseUrl  = rtrim(config('services.sigville.url', 'https://wsa.sig.ville.gouv.fr'), '/');
         $this->username = config('services.sigville.username', '');
         $this->password = config('services.sigville.password', '');
     }
@@ -41,7 +47,6 @@ class QpvEligibilityService
         string $commune    = '',
         string $codePostal = ''
     ): array {
-        // Cache 7 jours
         $cacheKey = ($lat !== null && $lng !== null)
             ? 'qpv_xy_'  . round($lat, 5) . '_' . round($lng, 5)
             : 'qpv_adr_' . md5($adresse . $codePostal . $commune);
@@ -51,8 +56,13 @@ class QpvEligibilityService
         });
     }
 
-    public function isEligible(?float $lat, ?float $lng, string $adresse = '', string $commune = '', string $codePostal = ''): bool
-    {
+    public function isEligible(
+        ?float $lat        = null,
+        ?float $lng        = null,
+        string $adresse    = '',
+        string $commune    = '',
+        string $codePostal = ''
+    ): bool {
         $r = $this->check($lat, $lng, $adresse, $commune, $codePostal);
         return !($r['qp_2024'] || $r['qp_2015'] || $r['zfu']);
     }
@@ -61,142 +71,121 @@ class QpvEligibilityService
     // APPELS API
     // ════════════════════════════════════════════════════════════
 
-    private function fetchFromApi(?float $lat, ?float $lng, string $adresse, string $commune, string $codePostal): array
-    {
+    private function fetchFromApi(
+        ?float $lat,
+        ?float $lng,
+        string $adresse,
+        string $commune,
+        string $codePostal
+    ): array {
         try {
-            return ($lat !== null && $lng !== null)
-                ? $this->callXyEndpoint($lat, $lng)
-                : $this->callAddressEndpoint($adresse, $commune, $codePostal);
+            // Priorité : coordonnées GPS (plus précis)
+            if ($lat !== null && $lng !== null) {
+                return $this->callXyEndpoint($lat, $lng);
+            }
+            // Fallback : adresse texte format WSA
+            return $this->callAddressEndpoint($adresse, $commune, $codePostal);
+
         } catch (\Throwable $e) {
             Log::warning('QpvEligibilityService erreur: ' . $e->getMessage());
             return $this->emptyResult();
         }
     }
 
-    /**
-     * /api/xy.json — géoréférencement par coordonnées GPS
-     * ✅ Méthode principale (on a lat/lng depuis la BAN)
-     */
+    // ─────────────────────────────────────────────────────────────
+    // ENDPOINT XY — /api/xy.json
+    // Géoréférencement inverse par coordonnées GPS
+    // ─────────────────────────────────────────────────────────────
     private function callXyEndpoint(float $lat, float $lng): array
     {
         $response = Http::withBasicAuth($this->username, $this->password)
             ->timeout($this->timeout)
             ->get($this->baseUrl . '/api/xy.json', [
-                'x'             => $lng,            // longitude
-                'y'             => $lat,            // latitude
-                'type_quartier' => 'QP,QP_2015,ZFU',
+                'x'              => $lng,               // longitude = X
+                'y'              => $lat,               // latitude  = Y
+                'type_quartier[]'=> ['QP', 'QP_2015', 'ZFU'],
             ]);
 
         if ($response->failed()) {
-            Log::warning("SIG Ville /api/xy.json → HTTP {$response->status()}");
+            Log::warning("SIG Ville /api/xy.json → HTTP {$response->status()} — {$response->body()}");
             return $this->emptyResult();
         }
 
         return $this->parseResponse($response->json());
     }
 
-    /**
-     * /api/v2.json — géoréférencement par adresse texte (BAN post-2024)
-     * ✅ Fallback si pas de coordonnées
-     */
-   private function callAddressEndpoint(string $adresse, string $commune, string $codePostal): array
-{
-    $response = Http::withBasicAuth($this->username, $this->password)
-        ->timeout($this->timeout)
-        ->get($this->baseUrl . '/api/v2.json', [
-            'type_adresse'         => 'WSA',
-            'adresse[num_voie]'    => $this->extractNumero($adresse),
-            'adresse[nom_voie]'    => $this->extractNomVoie($adresse),
-            'adresse[code_postal]' => $codePostal,
-            'adresse[nom_commune]' => $commune,
-            'type_quartier[]'      => ['QP', 'QP_2015', 'ZFU'],
-        ]);
+    // ─────────────────────────────────────────────────────────────
+    // ENDPOINT V2 — /api/v2.json
+    // Géoréférencement par adresse (format WSA avec crochets)
+    // Validé le 29/07/2026 — format correct pour l'API SIG Ville
+    // ─────────────────────────────────────────────────────────────
+    private function callAddressEndpoint(
+        string $adresse,
+        string $commune,
+        string $codePostal
+    ): array {
+        if (empty($adresse) && empty($commune)) {
+            return $this->emptyResult();
+        }
 
-    if ($response->failed()) {
-        Log::warning("SIG Ville /api/v2.json → HTTP {$response->status()}");
-        return $this->emptyResult();
+        $response = Http::withBasicAuth($this->username, $this->password)
+            ->timeout($this->timeout)
+            ->get($this->baseUrl . '/api/v2.json', [
+                'type_adresse'         => 'WSA',
+                'adresse[num_voie]'    => $this->extractNumero($adresse),
+                'adresse[nom_voie]'    => $this->extractNomVoie($adresse),
+                'adresse[code_postal]' => $codePostal,
+                'adresse[nom_commune]' => $commune,
+                'type_quartier[]'      => ['QP', 'QP_2015', 'ZFU'],
+            ]);
+
+        if ($response->failed()) {
+            Log::warning("SIG Ville /api/v2.json → HTTP {$response->status()} — {$response->body()}");
+            return $this->emptyResult();
+        }
+
+        return $this->parseResponse($response->json());
     }
 
-    return $this->parseResponse($response->json());
-}
-
-private function parseResponse(mixed $data): array
-{
-    if (empty($data)) return $this->emptyResult();
-
-    $result   = $this->emptyResult();
-    $reponses = $data['reponses'] ?? [];
-
-    foreach ($reponses as $rep) {
-        $type   = strtoupper($rep['type_quartier'] ?? '');
-        $trouve = strtoupper($rep['code_reponse']  ?? '') === 'OUI';
-
-        if (!$trouve) continue;
-
-        $match = [
-            'found' => true,
-            'code'  => $rep['code_quartier'] ?? null,
-            'nom'   => $rep['nom_quartier']  ?? null,
-        ];
-
-        match ($type) {
-            'QP'      => [$result['qp_2024'] = true, $result['matches']['qp_2024'] = $match],
-            'QP_2015' => [$result['qp_2015'] = true, $result['matches']['qp_2015'] = $match],
-            'ZFU'     => [$result['zfu']     = true, $result['matches']['zfu']     = $match],
-            default   => null,
-        };
-    }
-
-    $result['loccom_ref']  = $data['loccom_ref']                  ?? null;
-    $result['similitude']  = $data['adresse']['score']            ?? null;
-    $result['locvoie_ref'] = $data['code_reponse']                ?? null;
-
-    return $result;
-}
-
-private function extractNumero(string $adresse): ?string
-{
-    preg_match('/^\d+/', trim($adresse), $m);
-    return $m[0] ?? null;
-}
-
-private function extractNomVoie(string $adresse): string
-{
-    return trim(preg_replace('/^\d+\s*/', '', $adresse));
-}
     // ════════════════════════════════════════════════════════════
-    // PARSING RÉPONSE
-    // Variables issues du PDF guide utilisateur SIG Ville 2024
+    // PARSING DE LA RÉPONSE SIG Ville (format validé 29/07/2026)
+    //
+    // Structure retournée par l'API :
+    // {
+    //   "loccom_ref" : "COMMUNE_AVEC_QUARTIER",
+    //   "adresse"    : { "score": 97.03, ... },
+    //   "reponses"   : [
+    //     { "type_quartier": "QP",     "code_reponse": "NON", ... },
+    //     { "type_quartier": "QP_2015","code_reponse": "NON", ... },
+    //     { "type_quartier": "ZFU",    "code_reponse": "NON", ... },
+    //   ]
+    // }
     // ════════════════════════════════════════════════════════════
-
     private function parseResponse(mixed $data): array
     {
         if (empty($data)) return $this->emptyResult();
 
-        $items  = isset($data[0]) ? $data : [$data];
-        $result = $this->emptyResult();
+        $result   = $this->emptyResult();
+        $reponses = $data['reponses'] ?? [];
 
-        foreach ($items as $item) {
-            $locadr = strtoupper(trim($item['LOCADR_REF']    ?? ''));
-            $type   = strtoupper(trim($item['TYPE_QUARTIER'] ?? ''));
+        // Métadonnées de localisation
+        $result['loccom_ref']  = $data['loccom_ref']       ?? null;
+        $result['locvoie_ref'] = $data['code_reponse']     ?? null;
+        $result['similitude']  = $data['adresse']['score'] ?? null;
 
-            // Stocker les métadonnées de localisation (une seule fois)
-            if ($result['loccom_ref'] === null) {
-                $result['loccom_ref']  = $item['LOCCOM_REF']      ?? null;
-                $result['locvoie_ref'] = $item['LOCVOIE_REF']     ?? null;
-                $result['similitude']  = $item['SIMILITUDE_VOIE'] ?? null;
-            }
+        // Parser chaque réponse par type de quartier
+        foreach ($reponses as $rep) {
+            $type   = strtoupper(trim($rep['type_quartier'] ?? ''));
+            $trouve = strtoupper(trim($rep['code_reponse']  ?? '')) === 'OUI';
 
-            if ($locadr !== 'OUI') continue;
+            if (!$trouve) continue;
 
-            // Adresse dans un quartier → mapper sur le bon type
             $match = [
                 'found'     => true,
-                'code'      => $item['CODE_QUARTIER'] ?? null,
-                'nom'       => $item['NOM_QUARTIER']  ?? null,
-                'bande_300' => strtoupper($item['QP_BANDE_300'] ?? '') === 'OUI',
-                'bande_500' => strtoupper($item['QP_BANDE_500'] ?? '') === 'OUI',
-                'score'     => $item['SCORE']         ?? null,
+                'code'      => $rep['code_quartier'] ?? null,
+                'nom'       => $rep['nom_quartier']  ?? null,
+                'bande_300' => false,
+                'bande_500' => false,
             ];
 
             match ($type) {
@@ -210,6 +199,9 @@ private function extractNomVoie(string $adresse): string
         return $result;
     }
 
+    // ════════════════════════════════════════════════════════════
+    // RÉSULTAT VIDE
+    // ════════════════════════════════════════════════════════════
     private function emptyResult(): array
     {
         return [
@@ -221,5 +213,20 @@ private function extractNomVoie(string $adresse): string
             'locvoie_ref' => null,
             'similitude'  => null,
         ];
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // HELPERS — Découpage d'adresse pour format WSA
+    // ════════════════════════════════════════════════════════════
+
+    private function extractNumero(string $adresse): ?string
+    {
+        preg_match('/^\d+/', trim($adresse), $matches);
+        return $matches[0] ?? null;
+    }
+
+    private function extractNomVoie(string $adresse): string
+    {
+        return trim(preg_replace('/^\d+\s*/', '', $adresse));
     }
 }
