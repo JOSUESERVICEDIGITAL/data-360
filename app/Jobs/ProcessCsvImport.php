@@ -494,121 +494,457 @@ class ProcessCsvImport implements ShouldQueue
     // REPRÉSENTANT — MÊME LOGIQUE QUE LA BLADE
     // Helpers : drRepConnu, drMandatExpire, drDateFin
     // ════════════════════════════════════════════════════════════
-    private function extractRepresentantData(\Illuminate\Support\Collection $copros): array
-    {
-        $empty = [
-            'label' => 'Sans représentant légal', 'nom' => '', 'type' => '',
-            'siren' => '', 'siret' => '', 'immatriculation' => '',
-            'nom_copropriete' => '', 'nb_lots' => '', 'score' => '',
-            'siren_copropriete' => '',
-        ];
+ // ════════════════════════════════════════════════════════════
+// REPRÉSENTANT — LOGIQUE RNIC
+//
+// RÈGLE MÉTIER :
+// - Un mandat expiré NE signifie PAS qu'il y a un représentant actuel.
+// - Seul un représentant identifié avec un mandat valide est
+//   considéré comme représentant légal actuel.
+// - Si le nom d'un ancien mandataire est présent alors que son
+//   mandat est expiré, on conserve son nom à titre historique,
+//   mais le statut reste "Sans représentant légal".
+// - Aucun "gestionnaire de fait" ni "renouvellement en attente".
+// ════════════════════════════════════════════════════════════
+private function extractRepresentantData(\Illuminate\Support\Collection $copros): array
+{
+    $empty = [
+        'label'             => 'Sans représentant légal',
+        'nom'               => '',
+        'type'              => '',
+        'siren'             => '',
+        'siret'             => '',
+        'immatriculation'   => '',
+        'nom_copropriete'   => '',
+        'nb_lots'           => '',
+        'score'             => '',
+        'siren_copropriete' => '',
+    ];
 
-        if ($copros->isEmpty()) return $empty;
+    if ($copros->isEmpty()) {
+        return $empty;
+    }
 
-        // Priorité : copro avec représentant (même logique blade)
-        $coprosAvecRep = $copros->filter(fn($c) => $this->cRepConnu($c));
-        $coproPrincipale = $coprosAvecRep->sortByDesc(fn($c) => (int) $this->v($c, ['score_match']))->first()
-            ?? $copros->filter(fn($c) => !empty($this->v($c, ['numero_immatriculation'])))->sortByDesc(fn($c) => (int) $this->v($c, ['score_match']))->first()
-            ?? $copros->first();
 
-        if (!$coproPrincipale) return $empty;
+    // ════════════════════════════════════════════════════════
+    // 1. RECHERCHE D'ABORD D'UN REPRÉSENTANT ACTUEL
+    //
+    // IMPORTANT :
+    // cRepConnu() ne considère plus un mandat expiré comme
+    // un représentant.
+    // ════════════════════════════════════════════════════════
 
-        $repNom   = $this->v($coproPrincipale, ['representant_legal_nom', 'syndic_nom', 'raison_sociale_representant_legal', 'identification_representant_legal']);
-        $sirenRep = $this->v($coproPrincipale, ['siren_syndic', 'siren_representant_legal']);
-        $siretRep = $this->v($coproPrincipale, ['siret_syndic', 'siret_representant_legal']);
-        $typeRep  = $this->v($coproPrincipale, ['representant_legal_type', 'type_syndic']);
+    $coprosAvecRepActuel = $copros
+        ->filter(fn($c) => $this->cRepConnu($c))
+        ->sortByDesc(fn($c) => (int) $this->v($c, ['score_match']));
 
-        $mandatExpire  = $this->cMandatExpire($coproPrincipale);
-        $dateFinMandat = $this->cDateFin($coproPrincipale);
-        $repConnu      = $this->cRepConnu($coproPrincipale);
 
-        // Scanner toutes les copros si pas trouvé sur la principale
-        if (!$repConnu && $copros->isNotEmpty()) {
-            $anyRep = $copros->filter(fn($c) => $this->cRepConnu($c))->first();
-            if ($anyRep) {
-                $repConnu      = true;
-                $repNom        = $repNom ?: $this->v($anyRep, ['representant_legal_nom', 'syndic_nom']);
-                $sirenRep      = $sirenRep ?: $this->v($anyRep, ['siren_syndic', 'siren_representant_legal']);
-                $mandatExpire  = $mandatExpire ?: $this->cMandatExpire($anyRep);
-                $dateFinMandat = $dateFinMandat ?: $this->cDateFin($anyRep);
-            }
-        }
+    // ════════════════════════════════════════════════════════
+    // 2. SI UN REPRÉSENTANT ACTUEL EXISTE
+    // ════════════════════════════════════════════════════════
 
-        // Label (même logique blade)
-        if ($repConnu && !empty($repNom) && !$mandatExpire) {
-            $label = 'Avec représentant légal';
-        } elseif ($repConnu && $mandatExpire) {
-            $label = 'Gestionnaire de fait (mandat expiré le ' . $dateFinMandat . ')';
-        } elseif ($repConnu) {
-            $label = 'Avec représentant légal';
-        } else {
-            $label = 'Sans représentant légal';
-        }
+    if ($coprosAvecRepActuel->isNotEmpty()) {
+
+        $coproPrincipale = $coprosAvecRepActuel->first();
+
+        $repNom = $this->cV($coproPrincipale, [
+            'representant_legal_nom',
+            'syndic_nom',
+            'raison_sociale_representant_legal',
+            'identification_representant_legal',
+        ]);
+
+        $sirenRep = $this->cV($coproPrincipale, [
+            'siren_syndic',
+            'siren_representant_legal',
+        ]);
+
+        $siretRep = $this->cV($coproPrincipale, [
+            'siret_syndic',
+            'siret_representant_legal',
+        ]);
+
+        $typeRep = $cRepType = $this->cV($coproPrincipale, [
+            'representant_legal_type',
+            'type_syndic',
+        ]);
 
         return [
-            'label'            => $label,
-            'nom'              => $repNom,
-            'type'             => $typeRep,
-            'siren'            => $sirenRep,
-            'siret'            => $siretRep,
-            'immatriculation'  => $this->v($coproPrincipale, ['numero_immatriculation']),
-            'nom_copropriete'  => $this->v($coproPrincipale, ['nom_copropriete', 'nom_usage_copropriete']),
-            'nb_lots'          => $this->v($coproPrincipale, ['nombre_lots_habitation']),
-            'score'            => $this->v($coproPrincipale, ['score_match']),
-            'siren_copropriete'=> $this->v($coproPrincipale, ['siren_copropriete']),
+            'label'             => 'Avec représentant légal',
+            'nom'               => $repNom,
+            'type'              => $typeRep,
+            'siren'             => $sirenRep,
+            'siret'             => $siretRep,
+            'immatriculation'   => $this->v(
+                $coproPrincipale,
+                ['numero_immatriculation']
+            ),
+            'nom_copropriete'   => $this->v(
+                $coproPrincipale,
+                ['nom_copropriete', 'nom_usage_copropriete']
+            ),
+            'nb_lots'           => $this->v(
+                $coproPrincipale,
+                ['nombre_lots_habitation']
+            ),
+            'score'             => $this->v(
+                $coproPrincipale,
+                ['score_match']
+            ),
+            'siren_copropriete' => $this->v(
+                $coproPrincipale,
+                ['siren_copropriete']
+            ),
         ];
     }
 
-    // ── Helpers représentant (équivalents aux fonctions PHP du blade) ──
 
-    private function cV(mixed $copro, array $keys): string
-    {
-        foreach ($keys as $key) {
-            $val = is_object($copro) ? ($copro->{$key} ?? null) : ($copro[$key] ?? null);
-            if ($val !== null && trim((string)$val) !== '') return (string)$val;
-            $raw = is_object($copro) ? ($copro->raw_data ?? []) : ($copro['raw_data'] ?? []);
-            if (is_string($raw)) $raw = json_decode($raw, true) ?: [];
-            $val = $raw[$key] ?? null;
-            if ($val !== null && trim((string)$val) !== '') return (string)$val;
+    // ════════════════════════════════════════════════════════
+    // 3. AUCUN REPRÉSENTANT ACTUEL
+    //
+    // On cherche maintenant un ANCIEN mandataire uniquement
+    // pour pouvoir conserver son nom dans l'export.
+    //
+    // MAIS son statut reste :
+    // "Sans représentant légal"
+    // ════════════════════════════════════════════════════════
+
+    $coprosAvecAncienRep = $copros
+        ->filter(function ($c) {
+
+            $nom = $this->cV($c, [
+                'representant_legal_nom',
+                'syndic_nom',
+                'raison_sociale_representant_legal',
+                'identification_representant_legal',
+            ]);
+
+            return !empty($nom);
+        })
+        ->sortByDesc(fn($c) => (int) $this->v($c, ['score_match']));
+
+
+    $coproPrincipale = $coprosAvecAncienRep->first();
+
+
+    // Si aucun ancien représentant non plus,
+    // on prend simplement la copropriété principale.
+    if (!$coproPrincipale) {
+
+        $coproPrincipale = $copros
+            ->filter(fn($c) => !empty(
+                $this->v($c, ['numero_immatriculation'])
+            ))
+            ->sortByDesc(
+                fn($c) => (int) $this->v($c, ['score_match'])
+            )
+            ->first()
+            ?? $copros->first();
+    }
+
+
+    if (!$coproPrincipale) {
+        return $empty;
+    }
+
+
+    // ════════════════════════════════════════════════════════
+    // 4. RÉCUPÉRATION DES DONNÉES
+    // ════════════════════════════════════════════════════════
+
+    $repNom = $this->cV($coproPrincipale, [
+        'representant_legal_nom',
+        'syndic_nom',
+        'raison_sociale_representant_legal',
+        'identification_representant_legal',
+    ]);
+
+    $sirenRep = $this->cV($coproPrincipale, [
+        'siren_syndic',
+        'siren_representant_legal',
+    ]);
+
+    $siretRep = $this->cV($coproPrincipale, [
+        'siret_syndic',
+        'siret_representant_legal',
+    ]);
+
+    $typeRep = $this->cV($coproPrincipale, [
+        'representant_legal_type',
+        'type_syndic',
+    ]);
+
+    $mandatExpire  = $this->cMandatExpire($coproPrincipale);
+    $dateFinMandat = $this->cDateFin($coproPrincipale);
+
+
+    // ════════════════════════════════════════════════════════
+    // 5. STATUT
+    //
+    // Même si un ancien nom existe :
+    //
+    // mandat expiré = PAS de représentant actuel.
+    // ════════════════════════════════════════════════════════
+
+    $label = 'Sans représentant légal';
+
+
+    // ════════════════════════════════════════════════════════
+    // 6. NOM
+    //
+    // Si ancien mandataire trouvé + mandat expiré :
+    // on conserve le nom mais avec une indication claire.
+    //
+    // Aucun texte sur un renouvellement.
+    // ════════════════════════════════════════════════════════
+
+    if (!empty($repNom) && $mandatExpire && !empty($dateFinMandat)) {
+
+        $repNom .= ' — ancien mandat expiré le ' . $dateFinMandat;
+    }
+
+
+    return [
+        'label'             => $label,
+        'nom'               => $repNom,
+        'type'              => $typeRep,
+        'siren'             => $sirenRep,
+        'siret'             => $siretRep,
+
+        'immatriculation'   => $this->v(
+            $coproPrincipale,
+            ['numero_immatriculation']
+        ),
+
+        'nom_copropriete'   => $this->v(
+            $coproPrincipale,
+            ['nom_copropriete', 'nom_usage_copropriete']
+        ),
+
+        'nb_lots'           => $this->v(
+            $coproPrincipale,
+            ['nombre_lots_habitation']
+        ),
+
+        'score'             => $this->v(
+            $coproPrincipale,
+            ['score_match']
+        ),
+
+        'siren_copropriete' => $this->v(
+            $coproPrincipale,
+            ['siren_copropriete']
+        ),
+    ];
+}
+
+
+// ════════════════════════════════════════════════════════════
+// HELPERS REPRÉSENTANT
+// ════════════════════════════════════════════════════════════
+
+private function cV(mixed $copro, array $keys): string
+{
+    foreach ($keys as $key) {
+
+        $val = is_object($copro)
+            ? ($copro->{$key} ?? null)
+            : ($copro[$key] ?? null);
+
+        if (
+            $val !== null &&
+            trim((string) $val) !== ''
+        ) {
+            return (string) $val;
         }
-        return '';
+
+
+        // Recherche également dans raw_data
+        $raw = is_object($copro)
+            ? ($copro->raw_data ?? [])
+            : ($copro['raw_data'] ?? []);
+
+
+        if (is_string($raw)) {
+            $raw = json_decode($raw, true) ?: [];
+        }
+
+
+        $val = $raw[$key] ?? null;
+
+
+        if (
+            $val !== null &&
+            trim((string) $val) !== ''
+        ) {
+            return (string) $val;
+        }
     }
 
-    private function cDateFin(mixed $copro): string
-    {
-        $val = $this->cV($copro, ['date_fin_dernier_mandat']);
-        if ($val && !in_array($val, ['-', ''], true)) return $val;
-        $raw = is_object($copro) ? ($copro->raw_data ?? []) : ($copro['raw_data'] ?? []);
-        if (is_string($raw)) $raw = json_decode($raw, true) ?: [];
-        $rnic = $raw['raw_data'] ?? $raw;
-        if (is_string($rnic)) $rnic = json_decode($rnic, true) ?: [];
-        $val = $rnic['date_fin_dernier_mandat'] ?? '';
-        return ($val && !in_array($val, ['-', ''], true)) ? $val : '';
+    return '';
+}
+
+
+// ════════════════════════════════════════════════════════════
+// DATE FIN DU DERNIER MANDAT
+// ════════════════════════════════════════════════════════════
+private function cDateFin(mixed $copro): string
+{
+    $val = $this->cV(
+        $copro,
+        ['date_fin_dernier_mandat']
+    );
+
+    if (
+        $val &&
+        !in_array($val, ['-', ''], true)
+    ) {
+        return $val;
     }
 
-    private function cMandatExpire(mixed $copro): bool
-    {
-        $statut = $this->cV($copro, ['statut', 'mandat_en_cours']);
-        if (!$statut || in_array($statut, ['-', ''], true)) return false;
-        $lower  = strtolower($statut);
-        $dateFin = $this->cDateFin($copro);
-        return (
-            str_contains($lower, 'pas de mandat')
-            || str_contains($lower, 'mandat expir')
-            || str_contains($lower, 'sans successeur')
-        ) && !empty($dateFin);
+
+    $raw = is_object($copro)
+        ? ($copro->raw_data ?? [])
+        : ($copro['raw_data'] ?? []);
+
+
+    if (is_string($raw)) {
+        $raw = json_decode($raw, true) ?: [];
     }
 
-    private function cRepConnu(mixed $copro): bool
-    {
-        if (!empty($this->cV($copro, ['representant_legal_nom', 'syndic_nom', 'raison_sociale_representant_legal', 'identification_representant_legal']))) return true;
-        if (!empty($this->cV($copro, ['siren_syndic', 'siren_representant_legal']))) return true;
-        if (!empty($this->cV($copro, ['siret_syndic', 'siret_representant_legal']))) return true;
-        $connu = is_object($copro) ? ($copro->representant_legal_connu ?? false) : ($copro['representant_legal_connu'] ?? false);
-        if ((bool)$connu) return true;
-        if ($this->cMandatExpire($copro)) return true;
+
+    $rnic = $raw['raw_data'] ?? $raw;
+
+
+    if (is_string($rnic)) {
+        $rnic = json_decode($rnic, true) ?: [];
+    }
+
+
+    $val = $rnic['date_fin_dernier_mandat'] ?? '';
+
+
+    return (
+        $val &&
+        !in_array($val, ['-', ''], true)
+    )
+        ? $val
+        : '';
+}
+
+
+// ════════════════════════════════════════════════════════════
+// MANDAT EXPIRÉ
+// ════════════════════════════════════════════════════════════
+private function cMandatExpire(mixed $copro): bool
+{
+    $statut = $this->cV(
+        $copro,
+        ['statut', 'mandat_en_cours']
+    );
+
+
+    if (
+        !$statut ||
+        in_array($statut, ['-', ''], true)
+    ) {
         return false;
     }
+
+
+    $lower = mb_strtolower($statut);
+
+    $dateFin = $this->cDateFin($copro);
+
+
+    // Un mandat n'est considéré comme expiré que si
+    // le RNIC fournit également une date de fin.
+    if (empty($dateFin)) {
+        return false;
+    }
+
+
+    return (
+        str_contains($lower, 'pas de mandat') ||
+        str_contains($lower, 'mandat expir') ||
+        str_contains($lower, 'sans successeur')
+    );
+}
+
+
+// ════════════════════════════════════════════════════════════
+// REPRÉSENTANT CONNU
+//
+// IMPORTANT :
+// Le simple fait qu'un mandat soit expiré NE suffit PLUS.
+//
+// On cherche uniquement un représentant réellement identifié.
+// ════════════════════════════════════════════════════════════
+private function cRepConnu(mixed $copro): bool
+{
+    // Nom du représentant / syndic
+    $nom = $this->cV($copro, [
+        'representant_legal_nom',
+        'syndic_nom',
+        'raison_sociale_representant_legal',
+        'identification_representant_legal',
+    ]);
+
+
+    // SIREN
+    $siren = $this->cV($copro, [
+        'siren_syndic',
+        'siren_representant_legal',
+    ]);
+
+
+    // SIRET
+    $siret = $this->cV($copro, [
+        'siret_syndic',
+        'siret_representant_legal',
+    ]);
+
+
+    // Indicateur RNIC explicite
+    $connu = is_object($copro)
+        ? ($copro->representant_legal_connu ?? false)
+        : ($copro['representant_legal_connu'] ?? false);
+
+
+    /*
+     * RÈGLE IMPORTANTE :
+     *
+     * On ne fait PLUS :
+     *
+     * if ($this->cMandatExpire($copro)) return true;
+     *
+     * Un mandat expiré ne transforme pas la copropriété
+     * en copropriété "avec représentant".
+     */
+
+
+    if (!empty($nom)) {
+        return true;
+    }
+
+
+    if (!empty($siren)) {
+        return true;
+    }
+
+
+    if (!empty($siret)) {
+        return true;
+    }
+
+
+    if ((bool) $connu) {
+        return true;
+    }
+
+
+    return false;
+}
 
     // ════════════════════════════════════════════════════════════
     // COLORATION CONDITIONNELLE
