@@ -9,23 +9,24 @@
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.2",
-        "ext-ftp": "*",
-        "ext-zip": "*",
-        "halaxa/json-machine": "^1.2",
-        "laravel/framework": "^12.0",
-        "laravel/tinker": "^2.10.1",
-        "league/csv": "^9.28",
-        "league/flysystem-ftp": "^3.31",
-        "league/flysystem-sftp-v3": "^3.33",
-        "openspout/openspout": "^4.28",
-        "phpoffice/phpspreadsheet": "^5.7",
-        "phpseclib/phpseclib": "^3.0",
-        "stripe/stripe-php": "*",
-        "vonage/client": "^4.3"
-    },
+    "php": "^8.2",
+    "ext-ftp": "*",
+    "ext-zip": "*",
+    "fakerphp/faker": "^1.23",
+    "halaxa/json-machine": "^1.2",
+    "laravel/framework": "^12.0",
+    "laravel/tinker": "^2.10.1",
+    "league/csv": "^9.28",
+    "league/flysystem-ftp": "^3.31",
+    "league/flysystem-sftp-v3": "^3.33",
+    "openspout/openspout": "^4.28",
+    "phpoffice/phpspreadsheet": "^5.7",
+    "phpseclib/phpseclib": "^3.0",
+    "stripe/stripe-php": "*",
+    "vonage/client": "^4.3"
+},
     "require-dev": {
-        "fakerphp/faker": "^1.23",
+        
         "laravel/breeze": "^2.4",
         "laravel/pail": "^1.2.2",
         "laravel/pint": "^1.24",
@@ -87,7 +88,7 @@
             "dont-discover": []
         }
     },
-    
+
     "config": {
         "optimize-autoloader": true,
         "preferred-install": "dist",
@@ -102,7 +103,7 @@
             "ext-zip": "1.0"
         }
     },
-    
+
     "minimum-stability": "stable",
     "prefer-stable": true
 }
