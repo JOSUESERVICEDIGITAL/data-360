@@ -41,5 +41,6 @@ class UserFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
         ]);
+        // This method allows you to create a user with an unverified email address by setting the 'email_verified_at' attribute to null.
     }
 }
